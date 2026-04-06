@@ -1,0 +1,13 @@
+{
+  "appId": "com.fyp.visualguard",
+  "appName": "VisualGuard",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#212529"
+    }
+  }
+}
