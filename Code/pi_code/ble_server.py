@@ -124,11 +124,11 @@ class VisualGuardServer:
         print(f"⏳ [Thread] 開始嘗試連線 {ssid}...")
         try:
             start_time = time.time()
-            
+
             # 嘗試連接 WiFi
             success = WiFiManager.connect(ssid, password)
             elapsed_time = time.time() - start_time
-            
+
             if success:
                 self.is_connected_to_wifi = True
                 print("✅ WiFi 連線成功！")
@@ -137,56 +137,65 @@ class VisualGuardServer:
                 print(f"❌ 連線超過 {TIMEOUT_LIMIT} 秒，觸發 Timeout")
                 self.notify_client("WIFI_TIMEOUT")
             else:
+                print("❌ WiFi 連線失敗，請檢查 SSID/密碼 或 網路狀態")
+                self.notify_client("WIFI_FAIL")
+
+        except Exception as e:
+            print(f"❌ WiFi 連線異常: {e}")
+            self.notify_client("WIFI_FAIL")
+
+    def handle_write(self, char, value, **kwargs):
+        if value is None:
+            print("⚠️ 收到空寫入值，忽略")
+            return
+
+        try:
+            command = value.decode("utf-8") if isinstance(value, (bytes, bytearray)) else str(value)
+        except UnicodeDecodeError as e:
+            print(f"❌ 無法解碼手機指令: {e}")
+            self.notify_client("WIFI_FAIL")
+            return
+
+        print(f"\n📱 收到手機指令: {command}")
+
+        if command == "CANCEL_SETUP":
+            self.abort_tasks = True
+            self.is_connected_to_wifi = False
+            print("✋ 設置已取消")
+            self.notify_client("WIFI_CANCELLED")
+
+        elif command == "SCAN_WIFI":
+            self.abort_tasks = False
+            self.is_connected_to_wifi = False
+            if not self.scan_thread or not self.scan_thread.is_alive():
+                print("🔄 啟動 WiFi 掃描線程...")
+                self.scan_thread = threading.Thread(target=self._wifi_scan_loop, daemon=True)
+                self.scan_thread.start()
+            else:
+                print("ℹ️  WiFi 掃描線程已運行")
+
+        elif command.startswith("{"):
             try:
-                command = value.decode('utf-8')
-                print(f"\n📱 收到手機指令: {command}")
-                
-                if command == "CANCEL_SETUP":
-                    self.abort_tasks = True
-                    self.is_connected_to_wifi = False
-                    print("✋ 設置已取消")
-                    
-                elif command == "SCAN_WIFI":
-                    self.abort_tasks = False
-                    self.is_connected_to_wifi = False
-                    if not self.scan_thread or not self.scan_thread.is_alive():
-                        print("🔄 啟動 WiFi 掃描線程...")
-                        self.scan_thread = threading.Thread(target=self._wifi_scan_loop, daemon=True)
-                        self.scan_thread.start()
-                    else:
-                        print("ℹ️  WiFi 掃描線程已運行")
-                        
-                elif command.startswith("{"):
-                    try:
-                        data = json.loads(command)
-                        ssid = data.get("ssid")
-                        pwd = data.get("password")
-                        
-                        if not ssid or not pwd:
-                            print(f"❌ 缺少 SSID 或密碼: ssid={ssid}, pwd={'***' if pwd else 'None'}")
-                            self.notify_client("WIFI_FAIL")
-                            return
-                        
-                        print(f"📡 開始連接: SSID={ssid}, Password=***")
-                        # ★ 在單獨的線程中嘗試連接
-                        conn_thread = threading.Thread(target=self._connection_task, args=(ssid, pwd), daemon=True)
-                        conn_thread.start()
-                        
-                    except json.JSONDecodeError as e:
-                        print(f"❌ JSON 解析失敗: {e}")
-                        self.notify_client("WIFI_FAIL")
-                else:
-                    print(f"⚠️ 未知指令: {command}")
-                    
-            except UnicodeDecodeError as e:
-                print(f"❌ 指令編碼("{"):
-                try:
-                    data = json.loads(command)
-                    ssid = data.get("ssid")
-                    pwd = data.get("password")
-                    threading.Thread(target=self._connection_task, args=(ssid, pwd), daemon=True).start()
-                except Exception as e:
-                    print(f"⚠️ 指令解析錯誤: {e}")
+                data = json.loads(command)
+                ssid = data.get("ssid")
+                pwd = data.get("password")
+
+                if not ssid or not pwd:
+                    print(f"❌ 缺少 SSID 或密碼: ssid={ssid}, pwd={'***' if pwd else 'None'}")
+                    self.notify_client("WIFI_FAIL")
+                    return
+
+                print(f"📡 開始連接: SSID={ssid}, Password=***")
+                conn_thread = threading.Thread(target=self._connection_task, args=(ssid, pwd), daemon=True)
+                conn_thread.start()
+
+            except json.JSONDecodeError as e:
+                print(f"❌ JSON 解析失敗: {e}")
+                self.notify_client("WIFI_FAIL")
+
+        else:
+            print(f"⚠️ 未知指令: {command}")
+            self.notify_client("WIFI_FAIL")
 
     async def setup(self):
         self.loop = asyncio.get_running_loop()
