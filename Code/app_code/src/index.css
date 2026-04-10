@@ -12,3 +12,19 @@ html, body, #root {
 *, *::before, *::after {
   box-sizing: border-box;
 }
+
+/* 淡入動畫 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in-animation {
+  animation: fadeIn 0.3s ease-in-out;
+}
