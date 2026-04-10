@@ -1,6 +1,6 @@
 // ================== 📜 設備日誌頁面 ==================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { i18n } from '../i18n';
 import { DeviceService } from '../functions/device.functions';
 import { ActivityLogService } from '../functions/activityLog.functions';
@@ -12,6 +12,8 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
   const [showWifiSetup, setShowWifiSetup] = useState(false);
   const [wifiSSID, setWifiSSID] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
+  const [filterType, setFilterType] = useState(''); // 篩選類型
+  const [filterDate, setFilterDate] = useState(''); // 篩選日期
 
   // 使用 i18n.js 的翻譯
   const t = i18n[lang] || i18n.en;
@@ -33,9 +35,15 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
   }, [device?.device_id]);
 
   const handleRemoveDevice = async () => {
+    // 增加 user_id 防護，避免 API 報錯
+    if (!user?.user_id || !device?.device_id) {
+      alert('無法獲取用戶或設備資訊，請稍後再試。');
+      return;
+    }
+
     if (!window.confirm(t.removeConfirm)) return;
 
-    const result = await DeviceService.unbindDevice(user?.user_id, device.device_id);
+    const result = await DeviceService.unbindDevice(user.user_id, device.device_id);
     if (result.ok) {
       onBack();
     } else {
@@ -52,6 +60,39 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
     alert('✅ WiFi 設定已發送到設備');
     setShowWifiSetup(false);
   };
+
+  // 🎯 使用 useMemo 優化過濾和排序邏輯，避免無謂的重複計算
+  const filteredAndSortedLogs = useMemo(() => {
+    let filtered = [...logs];
+
+    // 按類型篩選
+    if (filterType) {
+      filtered = filtered.filter(log => log.activity_type === filterType);
+    }
+
+    // 按日期篩選
+    if (filterDate) {
+      filtered = filtered.filter(log => {
+        const logDate = new Date(log.time).toISOString().split('T')[0];
+        return logDate === filterDate;
+      });
+    }
+
+    // 倒敘排列（最新的在最上面）
+    filtered.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+    return filtered;
+  }, [logs, filterType, filterDate]);
+
+  // 🚨 終極防護：如果設備資料還未傳入，顯示載入畫面，避免白屏崩潰
+  if (!device) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+        <div className="spinner-border text-primary" role="status"></div>
+        <span className="ms-3 fw-bold text-muted">載入設備資料中...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="pb-5 p-4" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
@@ -120,19 +161,65 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
 
       {/* 日誌列表 */}
       <h5 className="fw-bold mb-3">{t.activityLogs}</h5>
+
+      {/* 🎯 篩選控制面板 */}
+      <div className="card shadow-sm border-0 mb-4">
+        <div className="card-body">
+          <div className="row g-2">
+            <div className="col-md-6">
+              <label className="form-label small fw-bold mb-1">按類型篩選</label>
+              <select 
+                className="form-select form-select-sm"
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+              >
+                <option value="">所有類型</option>
+                <option value="OCR">OCR</option>
+                <option value="OBJECT">OBJECT</option>
+                <option value="COLOR">COLOR</option>
+              </select>
+            </div>
+            <div className="col-md-6">
+              <label className="form-label small fw-bold mb-1">按日期篩選</label>
+              <input 
+                type="date" 
+                className="form-control form-control-sm"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* 清除篩選按鈕 */}
+          {(filterType || filterDate) && (
+            <div className="mt-2">
+              <button 
+                className="btn btn-sm btn-outline-secondary"
+                onClick={() => {
+                  setFilterType('');
+                  setFilterDate('');
+                }}
+              >
+                <i className="bi bi-x-circle me-1"></i> 清除篩選
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
       {loading ? (
         <div className="text-center py-5">
           <div className="spinner-border text-primary" role="status"></div>
           <p className="text-muted mt-2">{t.loading}</p>
         </div>
-      ) : logs.length === 0 ? (
+      ) : filteredAndSortedLogs.length === 0 ? (
         <div className="text-center text-muted py-5">
           <i className="bi bi-inbox" style={{ fontSize: '3rem' }}></i>
-          <p className="mt-2">沒有日誌紀錄</p>
+          <p className="mt-2">{filterType || filterDate ? '沒有符合條件的紀錄' : '沒有日誌紀錄'}</p>
         </div>
       ) : (
         <div>
-          {logs.map((log) => (
+          {filteredAndSortedLogs.map((log) => (
             <div key={log.activity_id} className="card shadow-sm border-0 mb-3">
               <div
                 className="card-body"

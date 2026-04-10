@@ -140,12 +140,15 @@ export const useBleSetup = (t, goBack) => {
         serviceUuid,
         charUuid,
         (value) => {
-          if (!value || !value.buffer) {
-            console.warn('⚠️ 收到的値為 null 或無效');
-            return;
-          }
-          片段:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-            
+          // 🛠️ 修復點：加入漏掉的 try 區塊
+          try {
+            if (!value || !value.buffer) {
+              console.warn('⚠️ 收到的値為 null 或無效');
+              return;
+            }
+            const text = new TextDecoder().decode(value.buffer);
+            console.log('📨 訊息片段:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
+              
             // ★ 處理可能被分割的 JSON 數據
             let fullMessage = incompleteData + text;
             
@@ -198,10 +201,7 @@ export const useBleSetup = (t, goBack) => {
               disconnectDevice();
             } else if (text === "WIFI_FAIL") {
               console.log('❌ WiFi 連接失敗 (密碼可能錯誤)');
-              alert(t.connFail || "WiFi Connection Failed! Please check password.
-            } else if (text === "WIFI_FAIL") {
-              console.log('❌ WiFi 連接失敗');
-              alert(t.connFail || "WiFi Connection Failed!");
+              alert(t.connFail || "WiFi Connection Failed! Please check password.");
               setBleStep('select_wifi');
             }
           } catch (decodeError) {
