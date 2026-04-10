@@ -155,7 +155,7 @@ class SupabaseClient:
 # 填入你的 Supabase 詳細資訊
 SUPABASE_URL = "https://iobnjmawpmtzsiojkauo.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvYm5qbWF3cG10enNpb2prYXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5MjMwOTksImV4cCI6MjA4NTQ5OTA5OX0.uV0rzfM2T-K3Z-0l7gPfBOKTqF6B4KCz0KnCHWOm-LI"
-DEVICE_ID = "pi5_001"  # ⚠️ 改成你的設備 ID
+DEVICE_ID = "PI_001"  # ⚠️ 改成你的設備 ID
 
 supabase = SupabaseClient(SUPABASE_URL, SUPABASE_KEY, DEVICE_ID)
 
