@@ -1,0 +1,12 @@
+# Pi5 硬件監控系統依賴
+
+# 硬件驅動
+gpiozero>=2.0
+mpu6050-raspberrypi>=1.1.1
+
+# Supabase 通信
+requests>=2.31.0
+python-dotenv>=1.0.0  # 用於環境變數管理 (可選)
+
+# 其他
+colorama>=0.4.6  # 彩色控制台輸出 (可選)
