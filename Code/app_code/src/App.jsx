@@ -3,6 +3,8 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DeviceLogsPage } from './pages/DeviceLogsPage';
 import { AddDevicePage } from './pages/AddDevicePage';
+import { WifiSetupPage } from './pages/WifiSetupPage';
+import { BluetoothSetupPage } from './pages/BluetoothSetupPage';
 import { Header } from './components/Header';
 
 function App() {
@@ -11,7 +13,7 @@ function App() {
   const [lang, setLang] = useState('en');
   const [textSize, setTextSize] = useState('medium');
   const [selectedDevice, setSelectedDevice] = useState(null);
-  const [currentPage, setCurrentPage] = useState('dashboard'); // dashboard | logs | addDevice
+  const [currentPage, setCurrentPage] = useState('dashboard'); // dashboard | logs | addDevice | wifiSetup | bluetoothSetup
 
   // ============ Event Handlers ============
 
@@ -51,6 +53,24 @@ function App() {
     setCurrentPage('dashboard');
   };
 
+  const handleSetupWifi = (device) => {
+    setSelectedDevice(device);
+    setCurrentPage('wifiSetup');
+  };
+
+  const handleBackFromWifiSetup = () => {
+    setCurrentPage('logs');
+  };
+
+  const handleSetupBluetooth = (device) => {
+    setSelectedDevice(device);
+    setCurrentPage('bluetoothSetup');
+  };
+
+  const handleBackFromBluetoothSetup = () => {
+    setCurrentPage('logs');
+  };
+
   // ============ Page Rendering Logic ============
 
   // Not logged in: show login page
@@ -75,6 +95,26 @@ function App() {
           user={user}
           device={selectedDevice}
           onBack={handleBackFromLogs}
+          onSetupWifi={handleSetupWifi}
+          onSetupBluetooth={handleSetupBluetooth}
+          lang={lang}
+        />
+      )}
+
+      {currentPage === 'wifiSetup' && (
+        <WifiSetupPage
+          user={user}
+          device={selectedDevice}
+          goBack={handleBackFromWifiSetup}
+          lang={lang}
+        />
+      )}
+
+      {currentPage === 'bluetoothSetup' && (
+        <BluetoothSetupPage
+          user={user}
+          device={selectedDevice}
+          goBack={handleBackFromBluetoothSetup}
           lang={lang}
         />
       )}

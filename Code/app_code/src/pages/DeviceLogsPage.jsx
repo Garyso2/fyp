@@ -5,13 +5,11 @@ import { i18n } from '../i18n';
 import { DeviceService } from '../functions/device.functions';
 import { ActivityLogService } from '../functions/activityLog.functions';
 
-export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
+export const DeviceLogsPage = ({ user, device, onBack, onSetupWifi, onSetupBluetooth, lang }) => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedLog, setExpandedLog] = useState(null);
-  const [showWifiSetup, setShowWifiSetup] = useState(false);
-  const [wifiSSID, setWifiSSID] = useState('');
-  const [wifiPassword, setWifiPassword] = useState('');
+
   const [filterType, setFilterType] = useState(''); // Filter by type
   const [filterDate, setFilterDate] = useState(''); // Filter by date
 
@@ -52,13 +50,17 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
   };
 
   const handleSetupWifi = async () => {
-    if (!wifiSSID || !wifiPassword) {
-      alert('Please fill in WiFi information');
-      return;
+    // Call the parent's onSetupWifi handler to navigate to WiFi setup page
+    if (onSetupWifi) {
+      onSetupWifi(device);
     }
-    // TODO: Connect via Bluetooth and send WiFi configuration
-    alert('✅ WiFi settings sent to device');
-    setShowWifiSetup(false);
+  };
+
+  const handleSetupBluetooth = async () => {
+    // Call the parent's onSetupBluetooth handler to navigate to Bluetooth setup page
+    if (onSetupBluetooth) {
+      onSetupBluetooth(device);
+    }
   };
 
   // 🎯 Use useMemo to optimize filter and sort logic, avoid unnecessary recalculations
@@ -117,12 +119,12 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
       {/* Device Control Buttons */}
       <div className="row mb-4">
         <div className="col-md-4 mb-2">
-          <button onClick={() => setShowWifiSetup(!showWifiSetup)} className="btn btn-info w-100">
+          <button onClick={handleSetupWifi} className="btn btn-info w-100">
             <i className="bi bi-wifi me-1"></i> {t.setupWifi}
           </button>
         </div>
         <div className="col-md-4 mb-2">
-          <button className="btn btn-warning w-100">
+          <button onClick={handleSetupBluetooth} className="btn btn-warning w-100">
             <i className="bi bi-bluetooth me-1"></i> {t.setupBLE}
           </button>
         </div>
@@ -132,32 +134,6 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
           </button>
         </div>
       </div>
-
-      {/* WiFi Setup Panel */}
-      {showWifiSetup && (
-        <div className="card border-warning mb-4">
-          <div className="card-body">
-            <h6 className="fw-bold mb-3">{t.enterWifiInfo}</h6>
-            <input
-              type="text"
-              className="form-control mb-2"
-              placeholder="SSID"
-              value={wifiSSID}
-              onChange={(e) => setWifiSSID(e.target.value)}
-            />
-            <input
-              type="password"
-              className="form-control mb-3"
-              placeholder={t.password || 'Password'}
-              value={wifiPassword}
-              onChange={(e) => setWifiPassword(e.target.value)}
-            />
-            <button onClick={handleSetupWifi} className="btn btn-success w-100">
-              {t.confirm}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Logs List */}
       <h5 className="fw-bold mb-3">{t.activityLogs}</h5>

@@ -1,88 +1,32 @@
+# ================== 🔵 BLE Server - VisualGuard Pi ==================
+
 import asyncio
 import json
-import subprocess
 import threading
 import time
-from typing import List, Optional
+from typing import Optional
 from bless import (
     BlessServer,
-    BlessGATTCharacteristic,
     GATTCharacteristicProperties,
     GATTAttributePermissions
 )
+from constants import SERVICE_UUID, CHAR_UUID, TIMEOUT_LIMIT
+from bluetooth_manager import BluetoothManager
 
-# --- Constants Configuration ---
-SERVICE_UUID = "A07498CA-AD5B-474E-940D-16F1FBE7E8CD"
-CHAR_UUID = "51FF12CB-FDF0-4222-800F-B91F37D3D224"
-TIMEOUT_LIMIT = 180  # 3 minutes (seconds)
-
-class WiFiManager:
-    @staticmethod
-    def rescan():
-        subprocess.run("sudo nmcli dev wifi rescan", shell=True)
-
-    @staticmethod
-    def get_nearby_ssids() -> List[str]:
-        cmd = "sudo nmcli -t -f SSID dev wifi | grep -v '^--' | grep -v '^$' | sort -u"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        ssids = [s for s in result.stdout.strip().split('\n') if s]
-        return ssids[:10]
-
-    @staticmethod
-    def connect(ssid, password) -> bool:
-        """
-        Connect to WiFi network
-        Returns True if connection succeeds or already connected, False otherwise
-        """
-        print(f"🔌 Attempting to connect to: {ssid}")
-        
-        try:
-            # ★ First check if already connected to this network
-            status_cmd = f"sudo nmcli -t -f ACTIVE,SSID dev wifi | grep '^yes' | cut -d: -f2"
-            status_result = subprocess.run(status_cmd, shell=True, capture_output=True, text=True)
-            current_ssid = status_result.stdout.strip()
-            
-            if current_ssid == ssid:
-                print(f"✅ Already connected to: {ssid}")
-                return True
-            
-            # ★ Attempt to connect to new network (with increased timeout)
-            connect_cmd = f'sudo nmcli -t dev wifi connect "{ssid}" password "{password}" ifname wlan0'
-            print(f"Executing command: {connect_cmd}")
-            
-            result = subprocess.run(
-                connect_cmd, 
-                shell=True, 
-                capture_output=True, 
-                text=True,
-                timeout=60  # ← Increased timeout to 60 seconds
-            )
-            
-            print(f"Return code: {result.returncode}")
-            print(f"Standard output: {result.stdout}")
-            print(f"Standard error: {result.stderr}")
-            
-            if result.returncode == 0:
-                print(f"✅ Successfully connected to: {ssid}")
-                return True
-            else:
-                print(f"❌ Connection failed (return code: {result.returncode})")
-                
-                # Try alternative method
-                if "Error" in result.stderr or "error" in result.stderr:
-                    print(f"⚠️ Error: {result.stderr}")
-                
-                return False
-                
-        except subprocess.TimeoutExpired:
-            print(f"❌ Connection timeout (60 seconds)")
-            return False
-        except Exception as e:
-            print(f"❌ Connection exception: {e}")
-            return False
 
 class VisualGuardServer:
+    """
+    BLE Server for VisualGuard Pi device
+    Handles WiFi and Bluetooth setup commands from mobile app
+    """
+
     def __init__(self, name: str):
+        """
+        Initialize BLE Server
+        
+        Args:
+            name: Server name (displayed as BLE device name)
+        """
         self.name = name
         self.server: Optional[BlessServer] = None
         self.is_connected_to_wifi = False
@@ -91,22 +35,64 @@ class VisualGuardServer:
         self.abort_tasks = False
 
     def notify_client(self, message: str):
-            if self.server:
-                try:
-                    print(f"📡 Sending notification to App: {message}")
-                    # ★ Ensure message is properly encoded
-                    if isinstance(message, str):
-                        message = message.encode('utf-8')
-                    
-                    self.server.get_characteristic(CHAR_UUID).value = message
-                    self.server.update_value(SERVICE_UUID, CHAR_UUID)
-                    print(f"✅ Notification sent, message length: {len(message)}")
-                except Exception as e:
-                    print(f"❌ Failed to send notification: {e}")
-                    self.abort_tasks = True
-                    self.is_connected_to_wifi = False
+        """
+        Send notification to connected mobile app
+        
+        Args:
+            message: Message to send (auto-encodes to UTF-8 if string)
+        """
+        if self.server:
+            try:
+                print(f"📡 Sending notification to App: {message}")
+                # Ensure message is properly encoded
+                if isinstance(message, str):
+                    message = message.encode('utf-8')
+
+                self.server.get_characteristic(CHAR_UUID).value = message
+                self.server.update_value(SERVICE_UUID, CHAR_UUID)
+                print(f"✅ Notification sent, message length: {len(message)}")
+            except Exception as e:
+                print(f"❌ Failed to send notification: {e}")
+                self.abort_tasks = True
+                self.is_connected_to_wifi = False
+        else:
+            print(f"⚠️ Server not initialized, unable to send notification: {message}")
+
+    def _bluetooth_scan_loop(self):
+        """Scan for Bluetooth devices in background"""
+        print("🔄 [Thread] Starting continuous Bluetooth scan...")
+        scan_count = 0
+        while not self.abort_tasks and scan_count < 3:  # Scan 3 times (15 seconds total)
+            devices = BluetoothManager.scan_devices(duration=5)
+            if devices and not self.abort_tasks:
+                self.notify_client(json.dumps({"type": "available_devices", "devices": devices}))
+            scan_count += 1
+
+    def _pair_bt_task(self, mac: str):
+        """Pair with Bluetooth device in background"""
+        print(f"⏳ [Thread] Starting pairing with {mac}...")
+        try:
+            success = BluetoothManager.pair_device(mac)
+            if success:
+                self.notify_client("BT_SUCCESS")
             else:
-                print(f"⚠️ Server not initialized, unable to send notification: {message}")
+                self.notify_client("BT_FAIL")
+        except Exception as e:
+            print(f"❌ Pairing exception: {e}")
+            self.notify_client("BT_FAIL")
+
+    def _connect_bt_task(self, mac: str):
+        """Connect to paired Bluetooth device in background"""
+        print(f"⏳ [Thread] Starting connection to {mac}...")
+        try:
+            success = BluetoothManager.connect_device(mac)
+            if success:
+                self.notify_client("BT_SUCCESS")
+            else:
+                self.notify_client("BT_FAIL")
+        except Exception as e:
+            print(f"❌ Connection exception: {e}")
+            self.notify_client("BT_FAIL")
 
     def _wifi_scan_loop(self):
         print("🔄 [Thread] Starting continuous WiFi scan...")
@@ -120,8 +106,9 @@ class VisualGuardServer:
                 if self.abort_tasks: break
                 time.sleep(1)
 
-    def _connection_task(self, ssid, password):
-        print(f"⏳ [Thread] Starting connection attempt to {ssid}...")
+    def _wifi_connection_task(self, ssid: str, password: str):
+        """Connect to WiFi network in background"""
+        print(f"⏳ [Thread] Starting WiFi connection attempt to {ssid}...")
         try:
             start_time = time.time()
 
@@ -158,7 +145,60 @@ class VisualGuardServer:
 
         print(f"\n📱 Received mobile command: {command}")
 
-        if command == "CANCEL_SETUP":
+        # ========== BLUETOOTH COMMANDS ==========
+        if command == "SCAN_BT":
+            """Scan for available Bluetooth devices"""
+            self.abort_tasks = False
+            if not self.scan_thread or not self.scan_thread.is_alive():
+                print("🔄 Starting Bluetooth scan thread...")
+                self.scan_thread = threading.Thread(target=self._bluetooth_scan_loop, daemon=True)
+                self.scan_thread.start()
+            else:
+                print("ℹ️  Bluetooth scan thread already running")
+        
+        elif command == "GET_PAIRED_BT":
+            """Get list of paired Bluetooth devices"""
+            paired = BluetoothManager.get_paired_devices()
+            connected = BluetoothManager.get_connected_devices()
+            response = json.dumps({
+                "type": "paired_devices",
+                "devices": paired,
+                "connected": connected
+            })
+            self.notify_client(response)
+        
+        elif command == "CANCEL_BT_SETUP":
+            """Cancel Bluetooth setup"""
+            self.abort_tasks = True
+            print("✋ Bluetooth setup cancelled")
+            self.notify_client("BT_CANCELLED")
+        
+        elif command.startswith("PAIR_BT:"):
+            """Pair with Bluetooth device: PAIR_BT:<mac>"""
+            mac = command.split(":", 1)[1]
+            conn_thread = threading.Thread(target=self._pair_bt_task, args=(mac,), daemon=True)
+            conn_thread.start()
+        
+        elif command.startswith("CONNECT_BT:"):
+            """Connect to paired Bluetooth device: CONNECT_BT:<mac>"""
+            mac = command.split(":", 1)[1]
+            conn_thread = threading.Thread(target=self._connect_bt_task, args=(mac,), daemon=True)
+            conn_thread.start()
+        
+        elif command.startswith("DISCONNECT_BT:"):
+            """Disconnect from Bluetooth device: DISCONNECT_BT:<mac>"""
+            mac = command.split(":", 1)[1]
+            success = BluetoothManager.disconnect_device(mac)
+            self.notify_client("BT_SUCCESS" if success else "BT_FAIL")
+        
+        elif command.startswith("REMOVE_BT:"):
+            """Remove (forget) Bluetooth device: REMOVE_BT:<mac>"""
+            mac = command.split(":", 1)[1]
+            success = BluetoothManager.remove_device(mac)
+            self.notify_client("BT_SUCCESS" if success else "BT_FAIL")
+
+        # ========== WIFI COMMANDS ==========
+        elif command == "CANCEL_SETUP":
             self.abort_tasks = True
             self.is_connected_to_wifi = False
             print("✋ Setup cancelled")
@@ -185,8 +225,8 @@ class VisualGuardServer:
                     self.notify_client("WIFI_FAIL")
                     return
 
-                print(f"📡 Starting connection: SSID={ssid}, Password=***")
-                conn_thread = threading.Thread(target=self._connection_task, args=(ssid, pwd), daemon=True)
+                print(f"📡 Starting WiFi connection: SSID={ssid}, Password=***")
+                conn_thread = threading.Thread(target=self._wifi_connection_task, args=(ssid, pwd), daemon=True)
                 conn_thread.start()
 
             except json.JSONDecodeError as e:
