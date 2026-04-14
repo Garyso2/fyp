@@ -73,7 +73,7 @@ while True:
                 ask_mode = False
 
             # Original photo and exit logic
-            elif "photo" in text or "snap" in text:
+            elif "photo" in text or "snap" in text or "take phone" in text:
                 with open(CMD_FILE, "w") as f: f.write("PHOTO")
                 ask_mode = False
             elif "exit" in text or "walk" in text:

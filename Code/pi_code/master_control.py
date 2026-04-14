@@ -33,6 +33,37 @@ def is_online():
         return True
     except: return False
 
+def notify_mode_change(new_mode):
+    """
+    Send system notification when mode changes
+    Uses both visual log and audio alert
+    """
+    try:
+        # Log to console and file
+        if new_mode == "ONLINE":
+            print("\n🌐🌐🌐 SWITCHED TO ONLINE MODE 🌐🌐🌐\n")
+        else:
+            print("\n🔴🔴🔴 SWITCHED TO OFFLINE MODE 🔴🔴🔴\n")
+        
+        # Audio alert using speaker
+        # Play a simple beep to notify user
+        if new_mode == "ONLINE":
+            # Double beep for ONLINE
+            subprocess.run(["beep", "-f", "1000", "-l", "200"], stderr=subprocess.DEVNULL, timeout=1)
+            time.sleep(0.2)
+            subprocess.run(["beep", "-f", "1000", "-l", "200"], stderr=subprocess.DEVNULL, timeout=1)
+        else:
+            # Single low beep for OFFLINE
+            subprocess.run(["beep", "-f", "500", "-l", "300"], stderr=subprocess.DEVNULL, timeout=1)
+    except:
+        # If beep command not available, use espeak instead
+        try:
+            text = "Online mode" if new_mode == "ONLINE" else "Offline mode"
+            subprocess.run(["espeak", "-v", "en-us", "-s", "150", text], 
+                         stderr=subprocess.DEVNULL, timeout=2)
+        except:
+            pass  # Silent fail if both beep and espeak unavailable
+
 def get_battery_level():
     """
     Get device battery level
@@ -73,11 +104,13 @@ def main():
     vision_proc = None
     last_battery_report_time = 0  # Timestamp of last battery report
     BATTERY_REPORT_INTERVAL = 30  # Report battery every 30 seconds
+    loop_count = 0  # Counter for status display every 10 loops
 
     while True:
         try:
             online = is_online()
             current_time = time.time()
+            loop_count += 1
 
             if online and current_mode != "ONLINE":
                 if vision_proc: vision_proc.terminate(); vision_proc.wait()
@@ -85,12 +118,20 @@ def main():
                 vision_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/online_vision.py"])
                 current_mode = "ONLINE"
                 logger.info("🌐 Switched to ONLINE Vision")
+                notify_mode_change("ONLINE")
 
             elif not online and current_mode != "OFFLINE":
                 if vision_proc: vision_proc.terminate(); vision_proc.wait()
                 vision_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/offline_vision.py"])
                 current_mode = "OFFLINE"
                 logger.info("🔴 Switched to OFFLINE Vision")
+                notify_mode_change("OFFLINE")
+
+            # Display status every 10 loops (every ~50 seconds)
+            if loop_count % 10 == 0:
+                status_icon = "🟢 ONLINE" if online else "🔴 OFFLINE"
+                logger.info(f"{status_icon} | Current Mode: {current_mode} | Processes: hw={hw_proc.poll() is None}, voice={voice_proc.poll() is None}, vision={vision_proc.poll() if vision_proc else 'None'}")
+
 
             # Report battery level if WiFi is available
             if online and HAS_SUPABASE and (current_time - last_battery_report_time >= BATTERY_REPORT_INTERVAL):

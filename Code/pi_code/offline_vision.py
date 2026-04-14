@@ -1,36 +1,78 @@
-import time, subprocess, os
+import time, subprocess, os, sys
 from ultralytics import YOLO
 from gtts import gTTS
 
 # --- Import configuration ---
 from config import RUN_DIR, DEVICE_ID
 
+# Force Python to output immediately, don't buffer prints
+sys.stdout.reconfigure(line_buffering=True)
+
 # --- Set file paths ---
 IMG_PATH = os.path.join(RUN_DIR, "capture_offline.jpg")
 AUDIO_PATH = os.path.join(RUN_DIR, "output.mp3")
+CMD_FILE = os.path.join(RUN_DIR, "voice_cmd.txt")
 
 print("🔴 [Offline Vision] Loading local YOLO model...")
 model = YOLO('yolov8n.pt')
+print("✅ [Offline Vision] YOLO model loaded successfully!")
+print("🎤 [Offline Vision] Waiting for 'PHOTO' command from voice listener...")
 
 while True:
     try:
-        subprocess.run(["rpicam-still", "-o", IMG_PATH, "-t", "1000", "--width", "640", "--height", "480", "--nopreview", "--zsl"], check=True)
-        results = model(IMG_PATH, verbose=False)
+        # Check if voice command file exists and contains "PHOTO" command
+        if os.path.exists(CMD_FILE):
+            try:
+                with open(CMD_FILE, "r") as f:
+                    cmd = f.read().strip()
+                
+                # If photo command received, take photo and analyze
+                if cmd == "PHOTO":
+                    print("📷 [Offline Vision] PHOTO command received! Taking picture...")
+                    
+                    # Capture image
+                    result = subprocess.run(
+                        ["rpicam-still", "-o", IMG_PATH, "-t", "1000", "--width", "640", "--height", "480", "--nopreview", "--zsl"],
+                        capture_output=True,
+                        timeout=5
+                    )
+                    
+                    if result.returncode == 0 and os.path.exists(IMG_PATH):
+                        # Run object detection
+                        results = model(IMG_PATH, verbose=False)
+                        
+                        objects = []
+                        for r in results:
+                            for box in r.boxes:
+                                name = model.names[int(box.cls)]
+                                if name not in objects:
+                                    objects.append(name)
+                        
+                        # Generate speech response
+                        if objects:
+                            sentence = "I see " + ", ".join(objects)
+                            print(f"✅ [Offline Vision] Detected: {sentence}")
+                            
+                            try:
+                                tts = gTTS(sentence, lang="en")
+                                tts.save(AUDIO_PATH)
+                                subprocess.run(["mpg123", "-q", AUDIO_PATH], timeout=10)
+                            except Exception as e:
+                                print(f"⚠️ TTS Error: {e}")
+                        else:
+                            print("⚠️ [Offline Vision] No objects detected.")
+                        
+                        # Clear command file after processing
+                        os.remove(CMD_FILE)
+                    else:
+                        print("❌ [Offline Vision] Failed to capture image")
+                        
+            except Exception as e:
+                print(f"❌ [Offline Vision] Error reading command: {e}")
         
-        objects = []
-        for r in results:
-            for box in r.boxes:
-                name = model.names[int(box.cls)]
-                if name not in objects: objects.append(name)
+        # Sleep briefly to avoid busy waiting
+        time.sleep(0.5)
         
-        if objects:
-            sentence = "I see " + ", ".join(objects)
-            tts = gTTS(sentence, lang="en")
-            tts.save(AUDIO_PATH)
-            subprocess.run(["mpg123", "-q", AUDIO_PATH])
-        else:
-            print("No objects detected.")
     except Exception as e:
-        print(f"Offline Vision Error: {e}")
-    
-    time.sleep(2)
+        print(f"❌ [Offline Vision] Error: {e}")
+        time.sleep(1)
