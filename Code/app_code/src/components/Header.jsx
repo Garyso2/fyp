@@ -1,4 +1,4 @@
-// ================== 🎯 固定頂部導航欄 ==================
+// ================== 🎯 Fixed Top Navigation Bar ==================
 
 import React from 'react';
 import { i18n } from '../i18n';

@@ -1,17 +1,17 @@
-// ================== 📱 Device 和 device_status 表操作層 ==================
-// 所有關於 device 和 device_status 表嘅數據庫操作都寫喺呢度
+// ================== 📱 Device and device_status Table Operation Layer ==================
+// All database operations for device and device_status tables are written here
 
 import { supabase } from '../supabaseClient';
 
 /**
- * Device 數據庫服務
- * 負責 device 和 device_status 表的所有 CRUD 操作
+ * Device Database Service
+ * Responsible for all CRUD operations on device and device_status tables
  */
 export const DeviceDB = {
   /**
-   * 按 device_id 查詢設備
-   * @param {string} deviceId - 設備 ID
-   * @returns {Promise<Object>} 設備對象
+   * Query device by device_id
+   * @param {string} deviceId - Device ID
+   * @returns {Promise<Object>} Device object
    */
   findById: async (deviceId) => {
     const { data, error } = await supabase
@@ -32,9 +32,9 @@ export const DeviceDB = {
   },
 
   /**
-   * 檢查設備是否存在
-   * @param {string} deviceId - 設備 ID
-   * @returns {Promise<boolean>} true 代表存在
+   * Check if device exists
+   * @param {string} deviceId - Device ID
+   * @returns {Promise<boolean>} true if exists
    */
   exists: async (deviceId) => {
     const { data } = await supabase
@@ -47,9 +47,9 @@ export const DeviceDB = {
   },
 
   /**
-   * 建立新設備
-   * @param {Object} deviceData - 設備資料 { device_id, device_name, language_setting }
-   * @returns {Promise<Object>} 新建的設備對象
+   * Create new device
+   * @param {Object} deviceData - Device data { device_id, device_name, language_setting }
+   * @returns {Promise<Object>} Newly created device object
    */
   create: async (deviceData) => {
     const { device_id, device_name, language_setting = 'en' } = deviceData;
@@ -66,7 +66,7 @@ export const DeviceDB = {
 
     if (error) throw error;
 
-    // 同時建立 device_status 紀錄
+    // Create device_status record at the same time
     await DeviceDB.createStatus({
       device_id,
       battery_level: 100,
@@ -77,7 +77,7 @@ export const DeviceDB = {
   },
 
   /**
-   * 更新設備名稱
+   * Update device name
    * @param {string} deviceId - 設備 ID
    * @param {string} deviceName - 新設備名稱
    * @returns {Promise<void>}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-🛡️ 安全硬件監控系統 (Pi5)
-監控超音波感測器和陀螺儀，檢測危險情況並上報到 Supabase
+🛡️ Safety Hardware Monitoring System (Pi5)
+Monitors ultrasonic sensor and gyroscope to detect dangerous situations and reports to Supabase
 """
 
 import time
@@ -12,181 +12,174 @@ from gpiozero import DistanceSensor
 from mpu6050 import mpu6050
 import os
 
-# 導入 Supabase 客戶端
+# Import configuration and Supabase client
+from config import DEVICE_ID, ULTRASONIC_DANGER_DISTANCE, ULTRASONIC_CHECK_INTERVAL, GYRO_DANGER_THRESHOLD, GYRO_CHECK_INTERVAL, ACTIVITY_LOG_COOLDOWN
+
 try:
     from supabase_client import supabase
     HAS_SUPABASE = True
 except ImportError:
     HAS_SUPABASE = False
-    print("⚠️  警告: Supabase 客戶端未找到，將以本地模式運行")
+    print("⚠️  Warning: Supabase client not found, running in local mode")
 
-# 強制 Python 即時輸出，唔好扣起啲 print
+# Force Python to output immediately, don't buffer prints
 sys.stdout.reconfigure(line_buffering=True)
 
-# =============== 硬件初始化 ===============
+# =============== Hardware Initialization ===============
 try: 
     ultrasonic = DistanceSensor(echo=24, trigger=23, max_distance=2.0)
-    print("✅ [Hardware] 超聲波 Sensor 成功連接！")
+    print("✅ [Hardware] Ultrasonic sensor connected successfully!")
 except Exception as e: 
     ultrasonic = None
-    print(f"❌ [Hardware] 超聲波連接失敗: {e}")
+    print(f"❌ [Hardware] Ultrasonic connection failed: {e}")
 
 try: 
     gyro = mpu6050(0x68)
-    print("✅ [Hardware] 陀螺儀成功連接！")
+    print("✅ [Hardware] Gyroscope connected successfully!")
 except Exception as e: 
     gyro = None
-    print(f"❌ [Hardware] 陀螺儀連接失敗: {e}")
+    print(f"❌ [Hardware] Gyroscope connection failed: {e}")
 
-# =============== 監控參數 ===============
-# 超音波感測器
-ULTRASONIC_DANGER_DISTANCE = 0.3  # 30cm - 物件太接近
-ULTRASONIC_CHECK_INTERVAL = 0.2  # 200ms 檢查一次
+# =============== Monitoring Parameters ===============
+# All parameters imported from config.py
 
-# 陀螺儀
-GYRO_DANGER_THRESHOLD = 300  # 角速度閾值 (角度/秒) - 過度搖晃
-GYRO_CHECK_INTERVAL = 0.2  # 200ms 檢查一次
-
-# 上報限制 (避免洪水式上報)
-REPORT_COOLDOWN = 5  # 同一類型危險，5秒內最多上報一次
-
-# =============== 全域狀態 ===============
-last_danger_time = {}  # {'ultrasonic': 時間戳, 'gyroscope': 時間戳}
-loop_count = 0  # 用嚟計時顯示心跳
+# =============== Global State ===============
+last_danger_time = {}  # {'ultrasonic': timestamp, 'gyroscope': timestamp}
+loop_count = 0  # Counter for displaying heartbeat
 
 def speak(text):
-    """發聲警告 (優先使用 TTS 打斷 AI 語音)"""
-    print(f"🔊 硬件緊急發聲: {text}")
+    """Emergency voice alert (priority TTS to interrupt AI voice)"""
+    print(f"🔊 Hardware emergency alert: {text}")
     
-    # 1. 放低「危險鎖定」檔案，警告 AI 程式依家非常時期，唔准出聲！
+    # 1. Create "danger lock" file to warn AI program not to speak
     try:
         with open("/tmp/danger.lock", "w") as f:
             f.write(str(time.time()))
     except: pass
     
-    # 2. 霸道總裁：直接「殺死」正在播放中嘅 AI 靚聲 (mpg123)
+    # 2. Kill any running AI voice (mpg123)
     subprocess.run(["pkill", "-f", "mpg123"], stderr=subprocess.DEVNULL)
     subprocess.run(["pkill", "-f", "espeak"], stderr=subprocess.DEVNULL)
     
-    # 3. 自己用最快速度發聲 (0秒延遲救命)
+    # 3. Use fastest possible speech (0 second delay for emergency)
     subprocess.Popen(["espeak", "-v", "en-us", "-s", "160", text], stderr=subprocess.DEVNULL)
 
 def can_report_danger(sensor_type: str) -> bool:
     """
-    檢查是否可以報告危險 (避免重複上報)
+    Check if danger can be reported (prevent duplicate reports)
     
     Args:
-        sensor_type: 'ultrasonic' 或 'gyroscope'
+        sensor_type: 'ultrasonic' or 'gyroscope'
     
     Returns:
-        True 如果可以報告，False 如果在冷卻期內
+        True if can report, False if in cooldown period
     """
     current_time = time.time()
     last_time = last_danger_time.get(sensor_type, 0)
     
-    if current_time - last_time >= REPORT_COOLDOWN:
+    if current_time - last_time >= ACTIVITY_LOG_COOLDOWN:
         last_danger_time[sensor_type] = current_time
         return True
     return False
 
 def report_danger(activity_type: str, content: str):
     """
-    上報危險事件到 Supabase
+    Report dangerous event to Supabase
     
     Args:
-        activity_type: 'ultrasonic' 或 'gyroscope'
-        content: 詳細的危險描述
+        activity_type: 'ultrasonic' or 'gyroscope'
+        content: Detailed danger description
     """
     if not HAS_SUPABASE:
-        print(f"⚠️  無法上報 (Supabase 不可用): {activity_type} - {content}")
+        print(f"⚠️  Cannot report (Supabase unavailable): {activity_type} - {content}")
         return
     
-    # 同步上報 (非同步避免阻擋監控迴圈)
+    # Sync report (non-blocking to avoid blocking monitoring loop)
     try:
         supabase.log_activity(
             activity_type=activity_type,
             detected_content=content
         )
     except Exception as e:
-        print(f"❌ 上報失敗: {e}")
+        print(f"❌ Report failed: {e}")
 
 def check_ultrasonic():
-    """檢查超音波感測器，檢測物件太接近"""
+    """Check ultrasonic sensor to detect objects too close"""
     if ultrasonic is None:
         return
     
     try:
-        distance = ultrasonic.distance  # 距離 (米)
-        distance_cm = distance * 100  # 轉換為厘米
+        distance = ultrasonic.distance  # Distance in meters
+        distance_cm = distance * 100  # Convert to centimeters
         
         if distance < ULTRASONIC_DANGER_DISTANCE:
-            # 危險：物件太接近
+            # Danger: object too close
             speak(f"Warning! Object detected at {distance_cm:.1f} centimeters!")
             
             if can_report_danger('ultrasonic'):
-                content = f"在前面發現物件，距離 {distance_cm:.1f} cm"
+                content = f"Object detected in front at distance {distance_cm:.1f} cm"
                 report_danger('ultrasonic', content)
-                print(f"⚠️  [Danger] 超音波: {content}")
+                print(f"⚠️  [Danger] Ultrasonic: {content}")
     
     except Exception as e:
-        print(f"❌ 超音波讀取失敗: {e}")
+        print(f"❌ Ultrasonic reading failed: {e}")
 
 def check_gyroscope():
-    """檢查陀螺儀，檢測過度搖晃 (可能跌倒)"""
+    """Check gyroscope to detect excessive shaking (possible fall)"""
     if gyro is None:
         return
     
     try:
-        # 讀取角速度 (单位: 角度/秒)
+        # Read angular velocity (unit: degrees/second)
         gyro_data = gyro.get_gyro_data()
         gyro_x = gyro_data['x']
         gyro_y = gyro_data['y']
         gyro_z = gyro_data['z']
         
-        # 計算總的角速度大小
+        # Calculate total angular velocity magnitude
         total_gyro = math.sqrt(gyro_x**2 + gyro_y**2 + gyro_z**2)
         
         if total_gyro > GYRO_DANGER_THRESHOLD:
-            # 危險：過度搖晃，可能跌倒或摔傷
+            # Danger: excessive shaking, possible fall or injury
             speak("Alert! Device is shaking violently! Possible fall detected!")
             
             if can_report_danger('gyroscope'):
-                content = f"跌親 - 檢測到過度搖晃 (角速度: {total_gyro:.1f}°/s)"
+                content = f"Fall detection - Excessive shaking detected (angular velocity: {total_gyro:.1f}°/s)"
                 report_danger('gyroscope', content)
-                print(f"⚠️  [Danger] 陀螺儀: {content}")
+                print(f"⚠️  [Danger] Gyroscope: {content}")
     
     except Exception as e:
-        print(f"❌ 陀螺儀讀取失敗: {e}")
+        print(f"❌ Gyroscope reading failed: {e}")
 
 def main():
-    """主監控迴圈"""
+    """Main monitoring loop"""
     global loop_count
     
     print("\n" + "="*50)
-    print("🛡️  安全硬件監控系統已啟動")
+    print("🛡️  Safety Hardware Monitoring System Started")
     print("="*50)
     
     try:
         while True:
             loop_count += 1
             
-            # 每 10 個迴圈印一次心跳
+            # Print heartbeat every 50 loops
             if loop_count % 50 == 0:
-                print(f"💓 [Heartbeat] 監控運行中... (迴圈 {loop_count})")
+                print(f"💓 [Heartbeat] Monitoring running... (loop {loop_count})")
             
-            # 檢查超音波感測器
+            # Check ultrasonic sensor
             check_ultrasonic()
             time.sleep(ULTRASONIC_CHECK_INTERVAL)
             
-            # 檢查陀螺儀
+            # Check gyroscope
             check_gyroscope()
             time.sleep(GYRO_CHECK_INTERVAL)
     
     except KeyboardInterrupt:
-        print("\n✋ [System] 硬件監控已停止")
+        print("\n✋ [System] Hardware monitoring stopped")
         sys.exit(0)
     except Exception as e:
-        print(f"❌ [System] 發生錯誤: {e}")
+        print(f"❌ [System] Error occurred: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

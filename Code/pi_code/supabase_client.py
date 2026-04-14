@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-🌐 Supabase Pi 客戶端
-用嚟同 Supabase 數據庫通信，上報設備危險事件
+🌐 Supabase Pi Client
+Communicates with Supabase database to report device safety events
 """
 
 import requests
@@ -12,15 +12,18 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 import sys
 
+# Import configuration
+from config import SUPABASE_URL, SUPABASE_KEY, DEVICE_ID
+
 class SupabaseClient:
     def __init__(self, url: str, key: str, device_id: str):
         """
-        初始化 Supabase 客戶端
+        Initialize Supabase client
         
         Args:
-            url: Supabase 項目 URL
-            key: Supabase 匿名密鑰 (anon key)
-            device_id: 設備 ID
+            url: Supabase project URL
+            key: Supabase anonymous key (anon key)
+            device_id: Device ID
         """
         self.url = url
         self.key = key
@@ -30,20 +33,20 @@ class SupabaseClient:
             'Content-Type': 'application/json',
             'Prefer': 'return=representation'
         }
-        self.timeout = 5  # 5秒超時
+        self.timeout = 5  # 5 seconds timeout
     
     def is_online(self) -> bool:
         """
-        檢查網路連接狀態
-        返回 True 如果有網際網路連接
+        Check network connectivity status
+        Returns True if internet connection is available
         """
         try:
-            # 嘗試連接到 Google DNS
+            # Try connecting to Google DNS
             socket.create_connection(("8.8.8.8", 53), timeout=2)
             return True
         except (socket.timeout, socket.error):
             try:
-                # 備用：嘗試連接到 Cloudflare DNS
+                # Fallback: Try connecting to Cloudflare DNS
                 socket.create_connection(("1.1.1.1", 53), timeout=2)
                 return True
             except (socket.timeout, socket.error):
@@ -56,23 +59,23 @@ class SupabaseClient:
         image_url: Optional[str] = None
     ) -> bool:
         """
-        上報活動日誌到 Supabase
+        Report activity log to Supabase
         
         Args:
-            activity_type: 活動類型 ('ultrasonic' 或 'gyroscope')
-            detected_content: 檢測內容詳情
-            image_url: 圖片 URL (可選)
+            activity_type: Activity type ('ultrasonic' or 'gyroscope')
+            detected_content: Details of detected content
+            image_url: Image URL (optional)
         
         Returns:
-            True 如果上報成功，False 否則
+            True if report succeeds, False otherwise
         """
-        # 1. 檢查網路連接
+        # 1. Check network connection
         if not self.is_online():
-            print("❌ [Supabase] 無網路連接，無法上報")
+            print("❌ [Supabase] No network connection, cannot report")
             return False
         
         try:
-            # 2. 準備數據
+            # 2. Prepare data
             current_time = datetime.now(timezone.utc).isoformat()
             payload = {
                 'device_id': self.device_id,
@@ -82,7 +85,7 @@ class SupabaseClient:
                 'time': current_time
             }
             
-            # 3. 向 Supabase 發送 POST 請求
+            # 3. Send POST request to Supabase
             response = requests.post(
                 f'{self.url}/rest/v1/activity_logs',
                 json=payload,
@@ -90,22 +93,22 @@ class SupabaseClient:
                 timeout=self.timeout
             )
             
-            # 4. 檢查響應
+            # 4. Check response
             if response.status_code in [200, 201]:
-                print(f"✅ [Supabase] 日誌上報成功: {activity_type} - {detected_content}")
+                print(f"✅ [Supabase] Log report successful: {activity_type} - {detected_content}")
                 return True
             else:
-                print(f"❌ [Supabase] 上報失敗 (HTTP {response.status_code}): {response.text}")
+                print(f"❌ [Supabase] Report failed (HTTP {response.status_code}): {response.text}")
                 return False
                 
         except requests.exceptions.Timeout:
-            print("❌ [Supabase] 請求超時")
+            print("❌ [Supabase] Request timeout")
             return False
         except requests.exceptions.ConnectionError:
-            print("❌ [Supabase] 連接錯誤")
+            print("❌ [Supabase] Connection error")
             return False
         except Exception as e:
-            print(f"❌ [Supabase] 未知錯誤: {e}")
+            print(f"❌ [Supabase] Unknown error: {e}")
             return False
     
     def update_device_status(
@@ -114,14 +117,14 @@ class SupabaseClient:
         is_online: bool
     ) -> bool:
         """
-        更新設備狀態 (電池電量、連線狀態)
+        Update device status (battery level, online status)
         
         Args:
-            battery_level: 電池百分比 (0-100)
-            is_online: 是否在線
+            battery_level: Battery percentage (0-100)
+            is_online: Whether device is online
         
         Returns:
-            True 如果更新成功，False 否則
+            True if update succeeds, False otherwise
         """
         if not self.is_online():
             return False
@@ -140,31 +143,27 @@ class SupabaseClient:
             )
             
             if response.status_code in [200, 204]:
-                print(f"✅ [Supabase] 設備狀態已更新")
+                print(f"✅ [Supabase] Device status updated")
                 return True
             else:
-                print(f"⚠️  [Supabase] 狀態更新失敗: {response.text}")
+                print(f"⚠️  [Supabase] Status update failed: {response.text}")
                 return False
                 
         except Exception as e:
-            print(f"❌ [Supabase] 狀態更新錯誤: {e}")
+            print(f"❌ [Supabase] Status update error: {e}")
             return False
 
 
-# ============ 全域 Supabase 客戶端實例 ============
-# 填入你的 Supabase 詳細資訊
-SUPABASE_URL = "https://iobnjmawpmtzsiojkauo.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvYm5qbWF3cG10enNpb2prYXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5MjMwOTksImV4cCI6MjA4NTQ5OTA5OX0.uV0rzfM2T-K3Z-0l7gPfBOKTqF6B4KCz0KnCHWOm-LI"
-DEVICE_ID = "PI_001"  # ⚠️ 改成你的設備 ID
-
+# ============ Global Supabase Client Instance ============
+# Configuration imported from config.py
 supabase = SupabaseClient(SUPABASE_URL, SUPABASE_KEY, DEVICE_ID)
 
 
 if __name__ == "__main__":
-    # 測試用
+    # For testing
     print("Testing Supabase connection...")
     result = supabase.log_activity(
         activity_type="test",
-        detected_content="測試連接"
+        detected_content="Test connection"
     )
     print(f"Result: {result}")

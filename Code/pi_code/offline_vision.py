@@ -2,11 +2,10 @@ import time, subprocess, os
 from ultralytics import YOLO
 from gtts import gTTS
 
-# --- 自動設定 run 資料夾 ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RUN_DIR = os.path.join(BASE_DIR, "run")
-os.makedirs(RUN_DIR, exist_ok=True)
+# --- Import configuration ---
+from config import RUN_DIR, DEVICE_ID
 
+# --- Set file paths ---
 IMG_PATH = os.path.join(RUN_DIR, "capture_offline.jpg")
 AUDIO_PATH = os.path.join(RUN_DIR, "output.mp3")
 

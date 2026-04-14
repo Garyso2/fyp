@@ -1,4 +1,4 @@
-// ================== ⚙️ 設定頁面 ==================
+// ================== ⚙️ Settings Page ==================
 
 import React, { useState } from 'react';
 import { i18n } from '../i18n';
@@ -11,7 +11,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
   const [saveMessage, setSaveMessage] = useState('');
   const [showMessage, setShowMessage] = useState(false);
 
-  // 使用 i18n.js 的翻譯字典
+  // Use translation dictionary from i18n.js
   const t = i18n[lang] || i18n.en;
 
   const handleLanguageChange = (newLang) => {
@@ -28,7 +28,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
     setShowMessage(true);
 
     try {
-      // 保存語言設定到數據庫
+      // Save language setting to database
       if (user?.user_id && tempLang !== lang) {
         const result = await UserService.updateLanguage(user.user_id, tempLang);
         if (!result.ok) {
@@ -36,7 +36,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
         }
       }
 
-      // 更新前端狀態
+      // Update frontend state
       if (tempLang !== lang) {
         setLang(tempLang);
       }
@@ -69,7 +69,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
     <div className="pb-5">
       <h3 className="mb-4 fw-bold">{t.settings}</h3>
 
-      {/* 提示訊息 */}
+      {/* Alert Message */}
       {showMessage && (
         <div className={`alert ${saveMessage.includes('✅') ? 'alert-success' : 'alert-danger'} alert-dismissible fade show`} role="alert">
           {saveMessage}
@@ -81,7 +81,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
         </div>
       )}
 
-      {/* 用戶資訊卡片 */}
+      {/* User Info Card */}
       <div className="card border-0 shadow-sm rounded-4 mb-4">
         <div className="card-body p-4 d-flex align-items-center">
           <div className="bg-primary text-white rounded-circle d-flex justify-content-center align-items-center me-3" style={{ width: '60px', height: '60px', fontSize: '30px' }}>
@@ -94,7 +94,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
         </div>
       </div>
 
-      {/* 語言設定 */}
+      {/* Language Setting */}
       <div className="card border-0 shadow-sm rounded-4 mb-3">
         <div className="card-body p-4">
           <h6 className="fw-bold mb-3">
@@ -112,7 +112,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
         </div>
       </div>
 
-      {/* 字體大小 */}
+      {/* Text Size */}
       <div className="card border-0 shadow-sm rounded-4 mb-4">
         <div className="card-body p-4">
           <h6 className="fw-bold mb-3">
@@ -137,7 +137,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
         </div>
       </div>
 
-      {/* 保存按鈕 */}
+      {/* Save Buttons */}
       {hasChanges && (
         <div className="d-flex gap-2 mb-4">
           <button

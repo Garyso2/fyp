@@ -6,18 +6,18 @@ import { AddDevicePage } from './pages/AddDevicePage';
 import { Header } from './components/Header';
 
 function App() {
-  // ============ 狀態管理 ============
+  // ============ State Management ============
   const [user, setUser] = useState(null);
   const [lang, setLang] = useState('en');
   const [textSize, setTextSize] = useState('medium');
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [currentPage, setCurrentPage] = useState('dashboard'); // dashboard | logs | addDevice
 
-  // ============ 事件處理 ============
+  // ============ Event Handlers ============
 
   const handleLoginSuccess = (userData) => {
     setUser(userData);
-    // 從用戶數據讀取語言偏好
+    // Read language preference from user data
     if (userData?.language) {
       setLang(userData.language);
     }
@@ -32,11 +32,11 @@ function App() {
 
   const handleSelectDevice = (device) => {
     if (device === null) {
-      // 點擊 + 按鈕，進入添加設備頁面
+      // Click + button, go to add device page
       setCurrentPage('addDevice');
       setSelectedDevice(null);
     } else {
-      // 點擊設備卡片，進入日誌頁面
+      // Click device card, go to logs page
       setSelectedDevice(device);
       setCurrentPage('logs');
     }
@@ -51,9 +51,9 @@ function App() {
     setCurrentPage('dashboard');
   };
 
-  // ============ 頁面渲染邏輯 ============
+  // ============ Page Rendering Logic ============
 
-  // 未登入：顯示登入頁面
+  // Not logged in: show login page
   if (!user) {
     return (
       <LoginPage
@@ -64,12 +64,12 @@ function App() {
     );
   }
 
-  // 已登入：根據 currentPage 顯示不同頁面（包含固定 header）
+  // Logged in: show different pages based on currentPage (with fixed header)
   return (
     <div style={{ paddingTop: '60px' }}>
       <Header onLogout={handleLogout} user={user} lang={lang} />
 
-      {/* 頁面內容 */}
+      {/* Page Content */}
       {currentPage === 'logs' && (
         <DeviceLogsPage
           user={user}

@@ -1,31 +1,31 @@
-// ================== 📱 Device 業務邏輯層 ==================
-// 所有關於設備管理的業務邏輯都在這裡
+// ================== 📱 Device Business Logic Layer ==================
+// All business logic related to device management is here
 
 import { DeviceDB } from '../db/device.db';
 import { UserDeviceDB } from '../db/userDevice.db';
 import { ActivityLogDB } from '../db/activityLog.db';
 
 /**
- * Device 服務（業務邏輯）
- * 處理設備相關的業務流程
+ * Device Service (Business Logic)
+ * Handles device-related business processes
  */
 export const DeviceService = {
   /**
-   * 用戶綁定新設備的完整流程
-   * 1. 檢查設備是否存在，不存在就建立
-   * 2. 建立用戶-設備關聯
-   * @param {string} userId - 用戶 ID
-   * @param {string} deviceId - 設備 ID
-   * @param {string} deviceName - 設備名稱
+   * Complete flow for user to bind a new device
+   * 1. Check if device exists, create if not
+   * 2. Create user-device association
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
+   * @param {string} deviceName - Device name
    * @returns {Promise<Object>} { ok, message }
    */
   bindDevice: async (userId, deviceId, deviceName) => {
     try {
-      // 檢查設備是否已存在
+      // Check if device already exists
       const deviceExists = await DeviceDB.exists(deviceId);
 
       if (!deviceExists) {
-        // 建立新設備
+        // Create new device
         await DeviceDB.create({
           device_id: deviceId,
           device_name: deviceName,
@@ -33,59 +33,59 @@ export const DeviceService = {
         });
       }
 
-      // 建立用戶-設備關聯
+      // Create user-device association
       await UserDeviceDB.bind(userId, deviceId);
 
       return {
         ok: true,
-        message: '✅ 設備已成功綁定'
+        message: '✅ Device successfully bound'
       };
     } catch (error) {
-      console.error('綁定設備失敗:', error);
+      console.error('Device binding failed:', error);
       return {
         ok: false,
-        message: error.message || '❌ 綁定設備失敗'
+        message: error.message || '❌ Device binding failed'
       };
     }
   },
 
   /**
-   * 用戶解除設備綁定的完整流程
-   * 1. 刪除用戶-設備關聯
-   * 2. 如果沒有其他用戶擁有該設備，則刪除設備
-   * @param {string} userId - 用戶 ID
-   * @param {string} deviceId - 設備 ID
+   * Complete flow for user to unbind a device
+   * 1. Delete user-device association
+   * 2. If no other users have the device, delete the device
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
    * @returns {Promise<Object>} { ok, message }
    */
   unbindDevice: async (userId, deviceId) => {
     try {
-      // 刪除用戶-設備關聯
+      // Delete user-device association
       await UserDeviceDB.unbind(userId, deviceId);
 
-      // 檢查是否還有其他用戶擁有該設備
+      // Check if any other users still have the device
       const userCount = await UserDeviceDB.countDeviceUsers(deviceId);
 
       if (userCount === 0) {
-        // 沒有用戶擁有，清理設備記錄
+        // No users have the device, clean up device record
         await DeviceDB.delete(deviceId);
       }
 
       return {
         ok: true,
-        message: '✅ 設備已解除綁定'
+        message: '✅ Device successfully unbound'
       };
     } catch (error) {
-      console.error('解除綁定失敗:', error);
+      console.error('Device unbinding failed:', error);
       return {
         ok: false,
-        message: error.message || '❌ 解除綁定失敗'
+        message: error.message || '❌ Device unbinding failed'
       };
     }
   },
 
   /**
-   * 取得用戶的所有設備列表
-   * @param {string} userId - 用戶 ID
+   * Get all devices for a user
+   * @param {string} userId - User ID
    * @returns {Promise<Object>} { ok, devices, message }
    */
   getUserDevices: async (userId) => {
@@ -94,7 +94,7 @@ export const DeviceService = {
       return {
         ok: true,
         devices,
-        message: '✅ 已取得設備列表'
+        message: '✅ Device list retrieved'
       };
     } catch (error) {
       return {

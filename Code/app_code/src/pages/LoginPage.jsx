@@ -1,4 +1,4 @@
-// ================== 🔐 登入/註冊頁面 ==================
+// ================== 🔐 Login/Register Page ==================
 
 import React, { useState } from 'react';
 import { i18n } from '../i18n';
@@ -13,7 +13,7 @@ export const LoginPage = ({ onLoginSuccess, lang, setLang }) => {
   const [successMsg, setSuccessMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // 使用 i18n.js 的翻譯
+  // Use translations from i18n.js
   const t = i18n[lang] || i18n.en;
 
   const handleSubmit = async (e) => {
@@ -22,14 +22,14 @@ export const LoginPage = ({ onLoginSuccess, lang, setLang }) => {
     setSuccessMsg('');
     setIsLoading(true);
 
-    // 檢查 Admin 後門
+    // Check admin backdoor
     const adminUser = UserService.checkAdminBackdoor(username, password);
     if (adminUser) {
       onLoginSuccess(adminUser);
       return;
     }
 
-    // 正常流程
+    // Normal flow
     const result = isRegisterMode
       ? await UserService.register(username, password, confirmPassword)
       : await UserService.login(username, password);

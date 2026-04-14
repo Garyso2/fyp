@@ -4,9 +4,10 @@ import json as _json
 import os
 import time
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RUN_DIR = os.path.join(BASE_DIR, "run")
-os.makedirs(RUN_DIR, exist_ok=True)
+# --- Import configuration ---
+from config import RUN_DIR, DEVICE_ID
+
+# --- Set command file ---
 CMD_FILE = os.path.join(RUN_DIR, "voice_cmd.txt")
 
 print("🎤 [Voice Listener] Loading Vosk models...")
@@ -30,11 +31,11 @@ try:
     stream = p.open(format=pyaudio.paInt16, channels=1, rate=mic_rate, input=True, frames_per_buffer=4000)
     stream.start_stream()
 except Exception as e:
-    print(f"❌ 無法開啟收音咪 (Error: {e})")
+    print(f"❌ Cannot open microphone (Error: {e})")
     exit(1)
 
 print("🎤 [Voice Listener] Listening for commands...")
-ask_mode = False  # 🌟 新增：提問模式
+ask_mode = False  # 🌟 Added: question mode
 
 while True:
     try:
@@ -45,33 +46,33 @@ while True:
             
             if not text: continue
             
-            # 將語音識別常犯嘅錯字修正返
+            # Fix common speech recognition errors
             text = text.replace("a i", "ai").replace("hey i", "hey ai")
-            print(f"👂 聽到: {text}")
+            print(f"👂 Recognized: {text}")
 
-            # 🌟 新增邏輯：Hi AI 問答
+            # 🌟 Added logic: Hi AI Q&A
             if "hi ai" in text or "hey ai" in text:
-                # 嘗試將 "hi ai" 後面嗰句說話切出嚟做問題
+                # Try to extract the question after "hi ai"
                 keyword = "hi ai" if "hi ai" in text else "hey ai"
                 question = text.split(keyword)[-1].strip()
                 
                 if question:
-                    # 如果連埋問題一齊講 (例如 "hi ai what is this")
+                    # If question is included in same sentence (e.g., "hi ai what is this")
                     with open(CMD_FILE, "w") as f: f.write(f"ASK_AI:{question}")
                     print(f"🎤 Triggered AI Question: {question}")
                     ask_mode = False
                 else:
-                    # 如果淨係講咗 "hi ai"，就等佢下一句先當係問題
+                    # If only "hi ai" is said, wait for next sentence as question
                     ask_mode = True
                     print("🎤 AI is waiting for your question...")
                     
             elif ask_mode:
-                # 收到下一句話，當作問題送出
+                # Next sentence is treated as question
                 with open(CMD_FILE, "w") as f: f.write(f"ASK_AI:{text}")
                 print(f"🎤 Captured AI Question: {text}")
                 ask_mode = False
 
-            # 原本嘅拍照與退出邏輯
+            # Original photo and exit logic
             elif "photo" in text or "snap" in text:
                 with open(CMD_FILE, "w") as f: f.write("PHOTO")
                 ask_mode = False

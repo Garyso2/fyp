@@ -1,87 +1,87 @@
-// ================== 👤 User 業務邏輯層 ==================
-// 所有關於用戶認證、登入、註冊的業務邏輯都在這裡
+// ================== 👤 User Business Logic Layer ==================
+// All business logic related to user authentication, login, and registration is here
 
 import { UserDB } from '../db/user.db';
 
 /**
- * User 服務（業務邏輯）
- * 處理用戶相關的業務流程
+ * User Service (Business Logic)
+ * Handles user-related business processes
  */
 export const UserService = {
   /**
-   * 用戶登入流程
-   * @param {string} username - 用戶名
-   * @param {string} password - 密碼
+   * User login flow
+   * @param {string} username - Username
+   * @param {string} password - Password
    * @returns {Promise<Object>} { status, user, message }
    */
   login: async (username, password) => {
     try {
-      // 防呆
+      // Validation
       if (!username || !password) {
         return {
           status: 'error',
-          message: '❌ 用戶名和密碼不能為空'
+          message: '❌ Username and password cannot be empty'
         };
       }
 
-      // 查詢數據庫
+      // Query database
       const user = await UserDB.findByUsernameAndPassword(username, password);
 
       return {
         status: 'success',
         user,
-        message: '✅ 登入成功'
+        message: '✅ Login successful'
       };
     } catch (error) {
-      console.error('登入失敗:', error);
+      console.error('Login failed:', error);
       return {
         status: 'error',
-        message: error.message || '❌ 登入失敗'
+        message: error.message || '❌ Login failed'
       };
     }
   },
 
   /**
-   * 用戶註冊流程
-   * @param {string} username - 用戶名
-   * @param {string} password - 密碼
-   * @param {string} confirmPassword - 確認密碼
+   * User registration flow
+   * @param {string} username - Username
+   * @param {string} password - Password
+   * @param {string} confirmPassword - Confirm password
    * @returns {Promise<Object>} { status, user, message }
    */
   register: async (username, password, confirmPassword) => {
     try {
-      // 防呆檢驗
+      // Validation
       if (!username || !password) {
         return {
           status: 'error',
-          message: '❌ 用戶名和密碼不能為空'
+          message: '❌ Username and password cannot be empty'
         };
       }
 
       if (password !== confirmPassword) {
         return {
           status: 'error',
-          message: '❌ 密碼不匹配'
+          message: '❌ Passwords do not match'
         };
       }
 
       if (password.length < 6) {
         return {
           status: 'error',
-          message: '❌ 密碼長度至少 6 位'
+          message: '❌ Password must be at least 6 characters'
         };
       }
 
-      // 檢查用戶名是否已存在
+      // Check if username already exists
       const exists = await UserDB.existsByUsername(username);
       if (exists) {
         return {
           status: 'error',
-          message: '❌ 用戶名已被使用'
+          message: '❌ Username already in use'
         };
       }
 
-      // 建立新用戶
+      // Create new user
       const user = await UserDB.create({
         username,
         password,
@@ -91,13 +91,13 @@ export const UserService = {
       return {
         status: 'success',
         user,
-        message: '✅ 註冊成功，請登入'
+        message: '✅ Registration successful, please login'
       };
     } catch (error) {
-      console.error('註冊失敗:', error);
+      console.error('Registration failed:', error);
       return {
         status: 'error',
-        message: error.message || '❌ 註冊失敗'
+        message: error.message || '❌ Registration failed'
       };
     }
   },

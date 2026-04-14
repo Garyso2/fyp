@@ -1,4 +1,4 @@
-// ================== 🔌 添加設備頁面 ==================
+// ================== 🔌 Add Device Page ==================
 
 import React from 'react';
 import { i18n } from '../i18n';
@@ -12,7 +12,7 @@ export const AddDevicePage = ({ user, goBack, lang }) => {
     startScan, connectToDevice, sendWifiConfig, disconnectDevice
   } = useBleSetup(t, goBack);
 
-  // 完成設置並綁定設備
+  // Complete setup and bind device
   const handleFinish = async () => {
     const bindResult = await DeviceService.bindDevice(
       user?.user_id,

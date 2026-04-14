@@ -1,18 +1,18 @@
-// ================== 👤 User 表操作層 ==================
-// 所有關於 user 表嘅數據庫操作都寫喺呢度
+// ================== 👤 User Table Operation Layer ==================
+// All database operations for user table are written here
 
 import { supabase } from '../supabaseClient';
 
 /**
- * User 數據庫服務
- * 負責 user 表的所有 CRUD 操作
+ * User Database Service
+ * Responsible for all CRUD operations on user table
  */
 export const UserDB = {
   /**
-   * 按 username 和 password 查詢用戶
-   * @param {string} username - 用戶名
-   * @param {string} password - 密碼
-   * @returns {Promise<Object>} 用戶對象
+   * Query user by username and password
+   * @param {string} username - Username
+   * @param {string} password - Password
+   * @returns {Promise<Object>} User object
    */
   findByUsernameAndPassword: async (username, password) => {
     const { data, error } = await supabase
@@ -23,15 +23,15 @@ export const UserDB = {
       .single();
 
     if (error || !data) {
-      throw new Error('❌ 用戶名或密碼錯誤');
+      throw new Error('❌ Invalid username or password');
     }
     return data;
   },
 
   /**
-   * 檢查用戶名是否已存在
-   * @param {string} username - 用戶名
-   * @returns {Promise<boolean>} true 代表已存在
+   * Check if username already exists
+   * @param {string} username - Username
+   * @returns {Promise<boolean>} true if exists
    */
   existsByUsername: async (username) => {
     const { data } = await supabase
@@ -44,9 +44,9 @@ export const UserDB = {
   },
 
   /**
-   * 建立新用戶
-   * @param {Object} userData - 用戶資料 { username, password, language }
-   * @returns {Promise<Object>} 新建的用戶對象
+   * Create new user
+   * @param {Object} userData - User data { username, password, language }
+   * @returns {Promise<Object>} Newly created user object
    */
   create: async (userData) => {
     const { username, password, language = 'en' } = userData;
@@ -68,9 +68,9 @@ export const UserDB = {
   },
 
   /**
-   * 按 ID 查詢用戶
-   * @param {string} userId - 用戶 ID
-   * @returns {Promise<Object>} 用戶對象
+   * Query user by ID
+   * @param {string} userId - User ID
+   * @returns {Promise<Object>} User object
    */
   findById: async (userId) => {
     const { data, error } = await supabase
@@ -84,9 +84,9 @@ export const UserDB = {
   },
 
   /**
-   * 更新用戶語言設定
-   * @param {string} userId - 用戶 ID
-   * @param {string} language - 語言代碼 (en, zh)
+   * Update user language setting
+   * @param {string} userId - User ID
+   * @param {string} language - Language code (en, zh)
    * @returns {Promise<void>}
    */
   updateLanguage: async (userId, language) => {

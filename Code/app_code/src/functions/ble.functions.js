@@ -1,15 +1,15 @@
-// ================== 🔌 BLE 藍牙業務邏輯層 ==================
-// 所有關於藍牙設置、掃描、WiFi 配置的業務邏輯都在這裡
+// ================== 🔌 BLE Bluetooth Business Logic Layer ==================
+// All business logic related to Bluetooth setup, scanning, WiFi configuration is here
 
 import { BleClient } from '@capacitor-community/bluetooth-le';
 
-// UUID 常數（與 Pi 設備共享的標準）
+// UUID Constants (shared standard with Pi device)
 const VG_SERVICE_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8cd';
 const VG_CHAR_UUID = '51ff12cb-fdf0-4222-800f-b91f37d3d224';
 
 /**
- * BLE 服務（業務邏輯）
- * 處理藍牙掃描、連接、WiFi 配置等流程
+ * BLE Service (Business Logic)
+ * Handles Bluetooth scanning, connection, WiFi configuration and other processes
  */
 export const BleService = {
   // ============ 藍牙掃描相關 ============

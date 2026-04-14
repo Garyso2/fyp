@@ -1,19 +1,19 @@
-// ================== 🔗 user_device 關聯表操作層 ==================
-// 所有關於 user_device 表（用戶與設備的關聯）嘅數據庫操作都寫喺呢度
+// ================== 🔗 user_device Association Table Operation Layer ==================
+// All database operations for user_device table (user-device associations) are written here
 
 import { supabase } from '../supabaseClient';
 
 /**
- * UserDevice 數據庫服務
- * 負責 user_device 表的所有 CRUD 操作
- * 這是一個關聯表，負責維護用戶和設備之間的多對多關係
+ * UserDevice Database Service
+ * Responsible for all CRUD operations on user_device table
+ * This is an association table maintaining many-to-many relationships between users and devices
  */
 export const UserDeviceDB = {
   /**
-   * 添加用戶-設備關聯（綁定設備）
-   * @param {string} userId - 用戶 ID
-   * @param {string} deviceId - 設備 ID
-   * @returns {Promise<Object>} 新建的關聯對象
+   * Add user-device association (bind device)
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
+   * @returns {Promise<Object>} Newly created association object
    */
   bind: async (userId, deviceId) => {
     const { data, error } = await supabase
@@ -30,9 +30,9 @@ export const UserDeviceDB = {
   },
 
   /**
-   * 刪除用戶-設備關聯（解除綁定）
-   * @param {string} userId - 用戶 ID
-   * @param {string} deviceId - 設備 ID
+   * Delete user-device association (unbind device)
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
    * @returns {Promise<void>}
    */
   unbind: async (userId, deviceId) => {
@@ -81,9 +81,9 @@ export const UserDeviceDB = {
   },
 
   /**
-   * 查詢設備的所有用戶
-   * @param {string} deviceId - 設備 ID
-   * @returns {Promise<Array>} 用戶列表陣列
+   * Query all users of a device
+   * @param {string} deviceId - Device ID
+   * @returns {Promise<Array>} Array of users
    */
   findUsersByDevice: async (deviceId) => {
     const { data, error } = await supabase

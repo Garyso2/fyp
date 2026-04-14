@@ -1,4 +1,4 @@
-// ================== 📜 設備日誌頁面 ==================
+// ================== 📜 Device Logs Page ==================
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { i18n } from '../i18n';
@@ -12,13 +12,13 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
   const [showWifiSetup, setShowWifiSetup] = useState(false);
   const [wifiSSID, setWifiSSID] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
-  const [filterType, setFilterType] = useState(''); // 篩選類型
-  const [filterDate, setFilterDate] = useState(''); // 篩選日期
+  const [filterType, setFilterType] = useState(''); // Filter by type
+  const [filterDate, setFilterDate] = useState(''); // Filter by date
 
-  // 使用 i18n.js 的翻譯
+  // Use translations from i18n.js
   const t = i18n[lang] || i18n.en;
 
-  // 載入日誌
+  // Load logs
   useEffect(() => {
     const loadLogs = async () => {
       if (!device?.device_id) return;
@@ -35,9 +35,9 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
   }, [device?.device_id]);
 
   const handleRemoveDevice = async () => {
-    // 增加 user_id 防護，避免 API 報錯
+    // Add user_id protection to avoid API errors
     if (!user?.user_id || !device?.device_id) {
-      alert('無法獲取用戶或設備資訊，請稍後再試。');
+      alert('Unable to retrieve user or device information, please try again later.');
       return;
     }
 
@@ -53,24 +53,24 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
 
   const handleSetupWifi = async () => {
     if (!wifiSSID || !wifiPassword) {
-      alert('請填寫 WiFi 資訊');
+      alert('Please fill in WiFi information');
       return;
     }
-    // TODO: 連接藍牙並發送 WiFi 配置
-    alert('✅ WiFi 設定已發送到設備');
+    // TODO: Connect via Bluetooth and send WiFi configuration
+    alert('✅ WiFi settings sent to device');
     setShowWifiSetup(false);
   };
 
-  // 🎯 使用 useMemo 優化過濾和排序邏輯，避免無謂的重複計算
+  // 🎯 Use useMemo to optimize filter and sort logic, avoid unnecessary recalculations
   const filteredAndSortedLogs = useMemo(() => {
     let filtered = [...logs];
 
-    // 按類型篩選
+    // Filter by type
     if (filterType) {
       filtered = filtered.filter(log => log.activity_type === filterType);
     }
 
-    // 按日期篩選
+    // Filter by date
     if (filterDate) {
       filtered = filtered.filter(log => {
         const logDate = new Date(log.time).toISOString().split('T')[0];
@@ -78,18 +78,18 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
       });
     }
 
-    // 倒敘排列（最新的在最上面）
+    // Sort in descending order (newest first)
     filtered.sort((a, b) => new Date(b.time) - new Date(a.time));
 
     return filtered;
   }, [logs, filterType, filterDate]);
 
-  // 🚨 終極防護：如果設備資料還未傳入，顯示載入畫面，避免白屏崩潰
+  // 🚨 Final protection: show loading screen if device data not loaded yet, prevent white screen crash
   if (!device) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
         <div className="spinner-border text-primary" role="status"></div>
-        <span className="ms-3 fw-bold text-muted">載入設備資料中...</span>
+        <span className="ms-3 fw-bold text-muted">Loading device data...</span>
       </div>
     );
   }
@@ -100,7 +100,7 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
         <i className="bi bi-arrow-left me-1"></i> {t.back}
       </button>
 
-      {/* 設備資訊卡片 */}
+      {/* Device Info Card */}
       <div className="card shadow-sm border-0 mb-4">
         <div className="card-body">
           <h3 className="text-primary fw-bold">{device.device_name}</h3>
@@ -114,7 +114,7 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
         </div>
       </div>
 
-      {/* 設備操作按鈕 */}
+      {/* Device Control Buttons */}
       <div className="row mb-4">
         <div className="col-md-4 mb-2">
           <button onClick={() => setShowWifiSetup(!showWifiSetup)} className="btn btn-info w-100">
@@ -133,7 +133,7 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
         </div>
       </div>
 
-      {/* WiFi 設定面板 */}
+      {/* WiFi Setup Panel */}
       {showWifiSetup && (
         <div className="card border-warning mb-4">
           <div className="card-body">
@@ -159,28 +159,28 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
         </div>
       )}
 
-      {/* 日誌列表 */}
+      {/* Logs List */}
       <h5 className="fw-bold mb-3">{t.activityLogs}</h5>
 
-      {/* 🎯 篩選控制面板 */}
+      {/* 🎯 Filter Control Panel */}
       <div className="card shadow-sm border-0 mb-4">
         <div className="card-body">
           <div className="row g-2">
             <div className="col-md-6">
-              <label className="form-label small fw-bold mb-1">按類型篩選</label>
+              <label className="form-label small fw-bold mb-1">Filter by Type</label>
               <select 
                 className="form-select form-select-sm"
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
               >
-                <option value="">所有類型</option>
+                <option value="">All Types</option>
                 <option value="OCR">OCR</option>
                 <option value="OBJECT">OBJECT</option>
                 <option value="COLOR">COLOR</option>
               </select>
             </div>
             <div className="col-md-6">
-              <label className="form-label small fw-bold mb-1">按日期篩選</label>
+              <label className="form-label small fw-bold mb-1">Filter by Date</label>
               <input 
                 type="date" 
                 className="form-control form-control-sm"
@@ -190,7 +190,7 @@ export const DeviceLogsPage = ({ user, device, onBack, lang }) => {
             </div>
           </div>
 
-          {/* 清除篩選按鈕 */}
+          {/* Clear Filter Button */}
           {(filterType || filterDate) && (
             <div className="mt-2">
               <button 

@@ -1,11 +1,11 @@
-// ================== 📜 ActivityLog 業務邏輯層 ==================
-// 所有關於活動日誌的業務邏輯都在這裡
+// ================== 📜 ActivityLog Business Logic Layer ==================
+// All business logic related to activity logs is here
 
 import { ActivityLogDB } from '../db/activityLog.db';
 
 /**
- * ActivityLog 服務（業務邏輯）
- * 處理日誌的查詢、新增、刪除等業務流程
+ * ActivityLog Service (Business Logic)
+ * Handles log queries, creation, deletion and other business processes
  */
 export const ActivityLogService = {
   /**
@@ -40,10 +40,10 @@ export const ActivityLogService = {
   },
 
   /**
-   * 獲取設備的活動日誌（分頁）
-   * @param {string} deviceId - 設備 ID
-   * @param {number} pageSize - 每頁大小（預設 50）
-   * @param {number} pageNumber - 第幾頁（預設 1）
+   * Get device activity logs (paginated)
+   * @param {string} deviceId - Device ID
+   * @param {number} pageSize - Page size (default 50)
+   * @param {number} pageNumber - Page number (default 1)
    * @returns {Promise<Object>} { ok, logs, message }
    */
   getDeviceLogs: async (deviceId, pageSize = 50, pageNumber = 1) => {
@@ -54,7 +54,7 @@ export const ActivityLogService = {
       return {
         ok: true,
         logs,
-        message: '✅ 已取得日誌列表'
+        message: '✅ Log list retrieved'
       };
     } catch (error) {
       return {
@@ -66,10 +66,10 @@ export const ActivityLogService = {
   },
 
   /**
-   * 查詢設備在指定時間範圍內的日誌
-   * @param {string} deviceId - 設備 ID
-   * @param {string} startTime - 開始時間 (ISO 8601)
-   * @param {string} endTime - 結束時間 (ISO 8601)
+   * Query device logs within specified time range
+   * @param {string} deviceId - Device ID
+   * @param {string} startTime - Start time (ISO 8601)
+   * @param {string} endTime - End time (ISO 8601)
    * @returns {Promise<Object>} { ok, logs, message }
    */
   getLogsByTimeRange: async (deviceId, startTime, endTime) => {
@@ -83,7 +83,7 @@ export const ActivityLogService = {
       return {
         ok: true,
         logs,
-        message: '✅ 已取得日誌列表'
+        message: '✅ Log list retrieved'
       };
     } catch (error) {
       return {
@@ -95,7 +95,7 @@ export const ActivityLogService = {
   },
 
   /**
-   * 查詢特定活動類型的日誌
+   * Query logs of specific activity type
    * @param {string} deviceId - 設備 ID
    * @param {string} activityType - 活動類型
    * @param {number} limit - 返回的最多日誌數

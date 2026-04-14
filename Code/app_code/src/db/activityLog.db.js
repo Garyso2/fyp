@@ -1,12 +1,12 @@
-// ================== 📜 activity_logs 表操作層 ==================
-// 所有關於 activity_logs 表嘅數據庫操作都寫喺呢度
-// 記錄設備上發生的事件（如檢測到的對象、活動等）
+// ================== 📜 activity_logs Table Operation Layer ==================
+// All database operations for activity_logs table are written here
+// Records events that occur on the device (such as detected objects, activities, etc.)
 
 import { supabase } from '../supabaseClient';
 
 /**
- * ActivityLog 數據庫服務
- * 負責 activity_logs 表的所有 CRUD 操作
+ * ActivityLog Database Service
+ * Responsible for all CRUD operations on activity_logs table
  */
 export const ActivityLogDB = {
   /**
@@ -39,9 +39,9 @@ export const ActivityLogDB = {
   },
 
   /**
-   * 按 ID 查詢單筆日誌
-   * @param {number} activityId - 活動日誌 ID
-   * @returns {Promise<Object>} 日誌對象
+   * Query single log by ID
+   * @param {number} activityId - Activity log ID
+   * @returns {Promise<Object>} Log object
    */
   findById: async (activityId) => {
     const { data, error } = await supabase
@@ -55,9 +55,9 @@ export const ActivityLogDB = {
   },
 
   /**
-   * 查詢設備的活動日誌列表（分頁）
-   * @param {string} deviceId - 設備 ID
-   * @param {number} limit - 一次返回的日誌數（預設 50）
+   * Query device activity logs list (paginated)
+   * @param {string} deviceId - Device ID
+   * @param {number} limit - Number of logs to return per request (default 50)
    * @param {number} offset - 偏移量，用於分頁（預設 0）
    * @returns {Promise<Array>} 日誌列表陣列
    */

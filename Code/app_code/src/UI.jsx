@@ -1,5 +1,5 @@
-// ================== 🎨 用戶界面層 (UI) ==================
-// 所有 UI 組件都寫喺呢度
+// ================== 🎨 User Interface Layer (UI) ==================
+// All UI components are written here
 
 import React, { useState, useEffect } from 'react';
 import 'bootstrap-icons/font/bootstrap-icons.css';
@@ -7,7 +7,7 @@ import { i18n } from './i18n';
 import { functions } from './functions';
 import { db } from './db';
 
-// ============ 🔐 LOGIN 頁面 ============
+// ============ 🔐 LOGIN Page ============
 
 export const Login = ({ onLoginSuccess, t = {}, lang = 'en', setLang }) => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
@@ -36,14 +36,14 @@ export const Login = ({ onLoginSuccess, t = {}, lang = 'en', setLang }) => {
       return;
     }
 
-    // 檢查 Admin 後門
+    // Check admin backdoor
     const adminUser = functions.adminBackdoor(username, password);
     if (adminUser) {
       onLoginSuccess(adminUser);
       return;
     }
 
-    // 正常登入/註冊流程
+    // Normal login/register flow
     const result = isRegisterMode
       ? await functions.handleRegister(username, password)
       : await functions.handleLogin(username, password);

@@ -4,60 +4,56 @@ import os
 import subprocess
 import signal
 import sys
-from gtts import gTTS  # 🌟 引入 Google 靚聲庫
+from gtts import gTTS  # 🌟 Import Google TTS library
 
-# ================= 抑制系統音效警告 =================
+# ================= Suppress System Audio Warnings =================
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
-# ================= 設定區 =================
-SERVER_IP = os.getenv("SERVER_IP", "100.125.29.38")
-PORT = os.getenv("SERVER_PORT", "8000")
-API_KEY = os.getenv("API_KEY", "yoloProject2026")
+# ================= Import Configuration =================
+from config import SERVER_IP, SERVER_PORT, API_KEY, RUN_DIR, WALK_LOOP_DELAY, SPEECH_COOLDOWN, DANGER_COOLDOWN, DEVICE_ID
+
+# ================= Configuration =================
+PORT = SERVER_PORT
 
 URL_STREAM = f"http://{SERVER_IP}:{PORT}/detect_stream"
 URL_DETAIL = f"http://{SERVER_IP}:{PORT}/analyze_detail"
 URL_HEALTH = f"http://{SERVER_IP}:{PORT}/health"
-URL_ASK = f"http://{SERVER_IP}:{PORT}/ask_ai"  # 🌟 Hi AI 問答專用網址
+URL_ASK = f"http://{SERVER_IP}:{PORT}/ask_ai"  # 🌟 AI Q&A dedicated URL
 
 HEADERS = {"x-api-key": API_KEY, "Content-Type": "image/jpeg"}
 session = requests.Session()
 session.headers.update(HEADERS)
 
-WALK_LOOP_DELAY = 0.8
-
-# --- 設定 run 資料夾 (與語音監聽器溝通) ---
+# --- Set run directory (communicate with voice listener) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RUN_DIR = os.path.join(BASE_DIR, "run")
 os.makedirs(RUN_DIR, exist_ok=True)
 CMD_FILE = os.path.join(RUN_DIR, "voice_cmd.txt")
 
-# 系統狀態與冷卻
+# System state and cooldown
 running = True
 tts_enabled = True
 last_spoken_message = ""
 last_spoken_time = 0
 current_tts_process = None
-SPEECH_COOLDOWN = 4.0 
-DANGER_COOLDOWN = 10.0
 last_danger_time = 0
 
-# ================= 語音發聲功能 =================
+# ================= Voice Speaking Functionality =================
 def speak(text, force=False):
     global last_spoken_message, last_spoken_time, current_tts_process
     if not text: return
     current_time = time.time()
     
     # ==========================================
-    # 🚨 絕對優先權機制：檢查有冇被硬件「封口」
+    # 🚨 Absolute priority mechanism: check if hardware has muted AI
     # ==========================================
     if os.path.exists("/tmp/danger.lock"):
         try:
             with open("/tmp/danger.lock", "r") as f:
                 lock_time = float(f.read().strip())
-            # 如果 3.5 秒內硬件報過警，AI 必須立刻收聲，讓路畀 Danger！
+            # If hardware alert within 3.5 seconds, AI must be silent!
             if current_time - lock_time < 3.5:
-                print(f"🤫 [AI 靜音] 讓路畀硬件，放棄講: {text}")
+                print(f"🤫 [AI Muted] Yielding to hardware, canceling speech: {text}")
                 return
         except: pass
     # ==========================================
@@ -69,18 +65,18 @@ def speak(text, force=False):
     last_spoken_message = text
     last_spoken_time = current_time
 
-    # 發聲前先清走之前自己講緊嘅嘢，防止自己同自己疊聲
+    # Kill any previous speech to prevent overlapping
     subprocess.run(["pkill", "-f", "mpg123"], stderr=subprocess.DEVNULL)
     subprocess.run(["pkill", "-f", "espeak"], stderr=subprocess.DEVNULL)
 
-    # 🌟 轉用 Google 靚聲 (MP3)
+    # 🌟 Use Google TTS (MP3)
     try:
         audio_path = os.path.join(RUN_DIR, "ai_speech.mp3")
         tts = gTTS(text, lang="en")
         tts.save(audio_path)
         current_tts_process = subprocess.Popen(["mpg123", "-q", audio_path])
     except Exception as e:
-        # 萬一上唔到網用唔到 gTTS，自動跌返落去普通聲保底
+        # If can't reach internet, fallback to espeak
         current_tts_process = subprocess.Popen(["espeak", "-v", "en-us", "-s", "155", text], stderr=subprocess.DEVNULL)
 
 def wait_for_speech_to_finish(timeout=15):
@@ -91,7 +87,7 @@ def wait_for_speech_to_finish(timeout=15):
         time.sleep(0.1)
         if time.time() - start_wait > timeout: break
 
-# ================= 相機與網絡輔助 =================
+# ================= Camera and Network Helpers =================
 def capture_jpeg_memory(width, height, quality=25):
     cmd = ["rpicam-still", "-o", "-", "-t", "1", "--width", str(width), "--height", str(height), 
            "--quality", str(quality), "--nopreview", "--zsl", "--autofocus-mode", "continuous"]
@@ -111,7 +107,7 @@ def check_server(max_retries=5, interval=2):
         time.sleep(interval)
     return False
 
-# ================= 接收獨立語音程式的指令 =================
+# ================= Receive Commands from Voice Listener =================
 def get_voice_command():
     try:
         if os.path.exists(CMD_FILE):
@@ -131,7 +127,7 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-# ================= 主程式 (純網絡分析邏輯) =================
+# ================= Main Program (Pure Network Analysis Logic) =================
 def main():    
     global last_danger_time, last_spoken_message
     state = "WALKING"
@@ -151,10 +147,10 @@ def main():
 
     while running:
         if state == "WALKING":
-            # 1. 檢查有無聲控指令
+            # 1. Check for voice commands
             voice_cmd = get_voice_command()
             
-            # 🌟 新增：處理 Hi AI 提問指令
+            # 🌟 Added: Handle AI Q&A commands
             if voice_cmd and voice_cmd.startswith("ASK_AI:"):
                 question = voice_cmd.split("ASK_AI:", 1)[1].strip()
                 if not question: question = "Describe what you see."
@@ -182,7 +178,7 @@ def main():
                 resume_walking_time = time.time()
                 continue
 
-            # 原有嘅 PHOTO 指令
+            # Original PHOTO command
             if voice_cmd == "PHOTO":
                 speak("Analysis mode.", force=True)
                 state = "FINDING_PREP"
@@ -192,11 +188,11 @@ def main():
             
             start_time = time.time()
             
-            # 2. 影相
+            # 2. Capture image
             img_bytes = capture_jpeg_memory(1280, 720, 55)
             if not img_bytes: time.sleep(0.1); continue
             
-            # 3. 專心與 Server 溝通
+            # 3. Communicate with Server
             try:
                 resp = session.post(URL_STREAM, data=img_bytes, timeout=6)
                 if resp.status_code != 200: time.sleep(0.1); continue
@@ -209,9 +205,9 @@ def main():
                 nearest_obj = data.get("nearest_object", "")
                 if nearest_obj: last_nearest_obj = nearest_obj
                 
-                print(f"🚶 [YOLO] Obs: {obstacle} | Col: {color} | Ges: {gesture} | Near: {nearest_obj}")
+                print(f"🚶 [YOLO] Obstacle: {obstacle} | Color: {color} | Gesture: {gesture} | Nearest: {nearest_obj}")
 
-                # 處理手勢
+                # Handle gesture
                 if switch or gesture == "Open_Palm":
                     if time.time() - resume_walking_time > 5.0:
                         walk_gesture_count += 1
@@ -219,12 +215,12 @@ def main():
                             speak("Analysis mode.", force=True); state = "FINDING_PREP"; walk_gesture_count = 0; time.sleep(1); continue
                 else: walk_gesture_count = 0 
 
-                # 處理紅綠燈
+                # Handle traffic light color
                 if color == "Red" and last_color != "Red": speak("Red Light.", force=True); last_color = "Red"
                 elif color == "Green" and last_color != "Green": speak("Green Light.", force=True); last_color = "Green"
                 elif color == "None": last_color = "None"
 
-                # 處理 YOLO 視覺避障
+                # Handle YOLO visual obstacle avoidance
                 if obstacle != "Safe":
                     now = time.time()
                     if now - last_danger_time > DANGER_COOLDOWN:
@@ -239,7 +235,7 @@ def main():
                         was_in_danger = False
 
             except Exception as e:
-                print(f"⚠️ Net Error: {e}")
+                print(f"⚠️ Network Error: {e}")
                 time.sleep(0.5)
 
             sleep_time = WALK_LOOP_DELAY - (time.time() - start_time)

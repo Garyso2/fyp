@@ -1,12 +1,12 @@
-// ================== 📊 Supabase 數據庫操作層 ==================
-// 所有與 Database 有關嘅操作都寫喺呢度
+// ================== 📊 Supabase Database Operation Layer ==================
+// All operations related to Database are written here
 
 import { supabase } from './supabaseClient';
 
 export const db = {
-  // ============ 👤 用戶相關操作 ============
+  // ============ 👤 User-related Operations ============
 
-  // 登入：檢查 username 同 password 係咪匹配
+  // Login: Check if username and password match
   login: async ({ username, password }) => {
     const { data, error } = await supabase
       .from('user')
@@ -16,14 +16,14 @@ export const db = {
       .single();
 
     if (error || !data) {
-      throw new Error('❌ 登入失敗：帳號或密碼錯誤');
+      throw new Error('❌ Login failed: Invalid username or password');
     }
     return data;
   },
 
-  // 註冊：建立新 User
+  // Register: Create new User
   register: async ({ username, password }) => {
-    // 1. 檢查 username 係咪已存在
+    // 1. Check if username already exists
     const { data: existingUser } = await supabase
       .from('user')
       .select('username')
@@ -31,10 +31,10 @@ export const db = {
       .maybeSingle();
 
     if (existingUser) {
-      throw new Error('❌ 用戶名已存在');
+      throw new Error('❌ Username already exists');
     }
 
-    // 2. 建立新 User（ID 用時間戳生成）
+    // 2. Create new User (ID generated using timestamp)
     const newUserId = 'usr_' + Date.now();
 
     const { data, error } = await supabase
@@ -52,7 +52,7 @@ export const db = {
     return data;
   },
 
-  // 更新用戶 Language 設定
+  // Update user Language setting
   updateLanguage: async (userId, language) => {
     const { error } = await supabase
       .from('user')
@@ -63,7 +63,7 @@ export const db = {
     return { ok: true };
   },
 
-  // 取得使用者資訊
+  // Get user information
   getUserInfo: async (userId) => {
     const { data, error } = await supabase
       .from('user')

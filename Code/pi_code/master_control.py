@@ -1,13 +1,10 @@
 import os, time, logging, socket, subprocess, sys
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-RUN_DIR = os.path.join(BASE_DIR, "run")
-os.makedirs(RUN_DIR, exist_ok=True)
-LOG_FILE = f"{RUN_DIR}/system_activity.log"
+# --- Import configuration ---
+from config import SERVER_IP, SERVER_PORT, RUN_DIR, DEVICE_ID, BASE_DIR
 
-# 填返你部 Server 嘅 IP
-SERVER_IP = "100.125.29.38"
-SERVER_PORT = 8000
+# --- Set log file ---
+LOG_FILE = f"{RUN_DIR}/system_activity.log"
 
 def setup_logger():
     logger = logging.getLogger("Master")
@@ -37,7 +34,7 @@ def main():
         subprocess.run([sys.executable, f"{BASE_DIR}/ble_server.py"])
         logger.info("✅ WiFi Setup Completed.")
 
-    # ⚠️ 重新將硬件同語音獨立成背景進程 (微服務架構)
+    # ⚠️ Run hardware and voice listener as independent background processes (microservices architecture)
     logger.info("🛡️ Starting Independent Hardware & Voice Listener...")
     hw_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/safety_hardware.py"])
     voice_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/voice_listener.py"])
@@ -51,7 +48,7 @@ def main():
 
             if online and current_mode != "ONLINE":
                 if vision_proc: vision_proc.terminate(); vision_proc.wait()
-                # 啟動專心做 AI 嘅 online_vision
+                # Start online vision focused on AI processing
                 vision_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/online_vision.py"])
                 current_mode = "ONLINE"
                 logger.info("🌐 Switched to ONLINE Vision")
@@ -62,7 +59,7 @@ def main():
                 current_mode = "OFFLINE"
                 logger.info("🔴 Switched to OFFLINE Vision")
 
-            # 看門狗：確保三兄弟冇死機，死咗自動復活
+            # Watchdog: ensure the three processes are alive, restart if dead
             if hw_proc.poll() is not None:
                 logger.warning("Restarting safety_hardware...")
                 hw_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/safety_hardware.py"])

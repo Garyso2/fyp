@@ -1,4 +1,4 @@
-// ================== 📊 主面板頁面 ==================
+// ================== 📊 Dashboard Page ==================
 
 import React, { useState, useEffect } from 'react';
 import 'bootstrap-icons/font/bootstrap-icons.css';
@@ -11,10 +11,10 @@ export const DashboardPage = ({ user, onLogout, onSelectDevice, lang, setLang, t
   const [isLoadingDevices, setIsLoadingDevices] = useState(true);
   const [selectedTab, setSelectedTab] = useState('devices');
 
-  // 使用 i18n.js 的翻譯
+  // Use translations from i18n.js
   const t = i18n[lang] || i18n.en;
 
-  // 載入設備列表
+  // Load device list
   useEffect(() => {
     const loadDevices = async () => {
       if (!user?.user_id) return;
@@ -46,7 +46,7 @@ export const DashboardPage = ({ user, onLogout, onSelectDevice, lang, setLang, t
   return (
     <div className="d-flex flex-column" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
       
-      {/* 標籤按鈕 */}
+      {/* Tab buttons */}
       <div className="bg-white border-bottom p-3 sticky-top" style={{ top: '60px' }}>
         <div className="btn-group" role="group">
           <button
@@ -66,7 +66,7 @@ export const DashboardPage = ({ user, onLogout, onSelectDevice, lang, setLang, t
         </div>
       </div>
 
-      {/* 內容區域 */}
+      {/* Content area */}
       <div className="flex-grow-1 overflow-auto p-4">
         {selectedTab === 'devices' && (
           <div>
@@ -115,7 +115,7 @@ export const DashboardPage = ({ user, onLogout, onSelectDevice, lang, setLang, t
           <div className="pb-5">
             <h3 className="mb-4 fw-bold">{t.settings}</h3>
 
-            {/* 用戶資訊卡片 */}
+            {/* User Info Card */}
             <div className="card border-0 shadow-sm rounded-4 mb-4">
               <div className="card-body p-4 d-flex align-items-center">
                 <div className="bg-primary text-white rounded-circle d-flex justify-content-center align-items-center me-3" style={{ width: '60px', height: '60px', fontSize: '30px' }}>
@@ -128,7 +128,7 @@ export const DashboardPage = ({ user, onLogout, onSelectDevice, lang, setLang, t
               </div>
             </div>
 
-            {/* 語言設定 */}
+            {/* Language Setting */}
             <div className="card border-0 shadow-sm rounded-4 mb-3">
               <div className="card-body p-4">
                 <h6 className="fw-bold mb-3">
@@ -146,7 +146,7 @@ export const DashboardPage = ({ user, onLogout, onSelectDevice, lang, setLang, t
               </div>
             </div>
 
-            {/* 字體大小 */}
+            {/* Text Size */}
             <div className="card border-0 shadow-sm rounded-4">
               <div className="card-body p-4">
                 <h6 className="fw-bold mb-3">
