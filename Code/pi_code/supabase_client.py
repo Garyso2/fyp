@@ -118,6 +118,7 @@ class SupabaseClient:
     ) -> bool:
         """
         Update device status (battery level, online status)
+        If record doesn't exist, create it first
         
         Args:
             battery_level: Battery percentage (0-100)
@@ -132,9 +133,11 @@ class SupabaseClient:
         try:
             payload = {
                 'battery_level': battery_level,
-                'is_online': is_online
+                'is_online': is_online,
+                'last_updated': datetime.now(timezone.utc).isoformat()
             }
             
+            # Try UPDATE first
             response = requests.patch(
                 f'{self.url}/rest/v1/device_status?device_id=eq.{self.device_id}',
                 json=payload,
@@ -143,8 +146,33 @@ class SupabaseClient:
             )
             
             if response.status_code in [200, 204]:
-                print(f"✅ [Supabase] Device status updated")
+                print(f"✅ [Supabase] Device status updated: {battery_level}%")
                 return True
+            
+            # If UPDATE failed or returned no rows, try INSERT
+            if response.status_code == 206 or '[]' in response.text:  # No rows matched
+                print(f"📝 [Supabase] Record not found, creating new device_status record...")
+                
+                insert_payload = {
+                    'device_id': self.device_id,
+                    'battery_level': battery_level,
+                    'is_online': is_online,
+                    'last_updated': datetime.now(timezone.utc).isoformat()
+                }
+                
+                insert_response = requests.post(
+                    f'{self.url}/rest/v1/device_status',
+                    json=insert_payload,
+                    headers=self.headers,
+                    timeout=self.timeout
+                )
+                
+                if insert_response.status_code in [200, 201]:
+                    print(f"✅ [Supabase] Device status record created: {battery_level}%")
+                    return True
+                else:
+                    print(f"❌ [Supabase] Failed to create status record: {insert_response.text}")
+                    return False
             else:
                 print(f"⚠️  [Supabase] Status update failed: {response.text}")
                 return False
