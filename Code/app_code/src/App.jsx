@@ -54,12 +54,15 @@ function App() {
   };
 
   const handleSetupWifi = (device) => {
+    console.log('🛠️ [App] Setting up WiFi for device:', device?.device_id);
     setSelectedDevice(device);
     setCurrentPage('wifiSetup');
   };
 
   const handleBackFromWifiSetup = () => {
+    console.log('🔙 [App] Returning from WiFi setup');
     setCurrentPage('logs');
+    // Keep selectedDevice so logs page can still access it
   };
 
   const handleSetupBluetooth = (device) => {
@@ -101,13 +104,28 @@ function App() {
         />
       )}
 
-      {currentPage === 'wifiSetup' && (
+      {currentPage === 'wifiSetup' && selectedDevice && (
         <WifiSetupPage
           user={user}
           device={selectedDevice}
           goBack={handleBackFromWifiSetup}
           lang={lang}
         />
+      )}
+
+      {currentPage === 'wifiSetup' && !selectedDevice && (
+        <div style={{ paddingTop: '60px' }} className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+          <div className="card shadow-sm">
+            <div className="card-body text-center p-5">
+              <i className="bi bi-exclamation-triangle fs-1 text-danger mb-3"></i>
+              <h5>Device Not Found</h5>
+              <p className="text-muted">Please select a device first</p>
+              <button onClick={() => setCurrentPage('dashboard')} className="btn btn-primary">
+                Back to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {currentPage === 'bluetoothSetup' && (

@@ -44,20 +44,29 @@ class VisualGuardServer:
         """
         if self.server:
             try:
-                print(f"📡 Sending notification to App: {message}")
+                print(f"📡 [BLE] Sending notification: {message}")
                 # Ensure message is properly encoded
                 if isinstance(message, str):
-                    message = message.encode('utf-8')
+                    message_bytes = message.encode('utf-8')
+                else:
+                    message_bytes = message
 
-                self.server.get_characteristic(CHAR_UUID).value = message
+                # Set the characteristic value
+                char = self.server.get_characteristic(CHAR_UUID)
+                char.value = message_bytes
+                
+                # Update value to trigger notification
                 self.server.update_value(SERVICE_UUID, CHAR_UUID)
-                print(f"✅ Notification sent, message length: {len(message)}")
+                print(f"✅ [BLE] Notification sent successfully, length: {len(message_bytes)} bytes, content: {message}")
+                
             except Exception as e:
-                print(f"❌ Failed to send notification: {e}")
+                print(f"❌ [BLE] Failed to send notification: {e}")
+                import traceback
+                traceback.print_exc()
                 self.abort_tasks = True
                 self.is_connected_to_wifi = False
         else:
-            print(f"⚠️ Server not initialized, unable to send notification: {message}")
+            print(f"⚠️ [BLE] Server not initialized, unable to send notification: {message}")
 
     def _bluetooth_scan_loop(self):
         """Scan for Bluetooth devices in background"""
@@ -110,6 +119,12 @@ class VisualGuardServer:
     def _wifi_connection_task(self, ssid: str, password: str):
         """Connect to WiFi network in background"""
         print(f"⏳ [Thread] Starting WiFi connection attempt to {ssid}...")
+        print("🛑 [Thread] Stopping WiFi scan thread to avoid notification conflicts...")
+        self.abort_tasks = True  # 🔴 CRITICAL: Stop scan thread FIRST
+        
+        # Wait for scan thread to stop
+        time.sleep(0.5)
+        
         try:
             start_time = time.time()
 
@@ -119,17 +134,22 @@ class VisualGuardServer:
 
             if success:
                 self.is_connected_to_wifi = True
-                print("✅ WiFi connection successful!")
-                self.notify_client("WIFI_SUCCESS")
+                print("✅ [WiFi] Connection successful!")
+                # 🔴 Send success message multiple times to ensure delivery
+                for i in range(3):
+                    self.notify_client("WIFI_SUCCESS")
+                    print(f"📡 [WiFi] Sent WIFI_SUCCESS ({i+1}/3)")
+                    time.sleep(0.2)
+                    
             elif elapsed_time > TIMEOUT_LIMIT:
-                print(f"❌ Connection exceeded {TIMEOUT_LIMIT} seconds, timeout triggered")
+                print(f"❌ [WiFi] Connection exceeded {TIMEOUT_LIMIT} seconds, timeout triggered")
                 self.notify_client("WIFI_TIMEOUT")
             else:
-                print("❌ WiFi connection failed, please check SSID/password or network status")
+                print("❌ [WiFi] Connection failed, please check SSID/password or network status")
                 self.notify_client("WIFI_FAIL")
 
         except Exception as e:
-            print(f"❌ WiFi connection exception: {e}")
+            print(f"❌ [WiFi] Connection exception: {e}")
             self.notify_client("WIFI_FAIL")
 
     def handle_write(self, char, value, **kwargs):

@@ -6,6 +6,28 @@ import { useWifiSetup } from '../code/WifiSetup/useWifiSetup';
 
 export const WifiSetupPage = ({ device, user, lang, goBack }) => {
   const t = i18n[lang] || i18n.en;
+  
+  // ⚠️ Safety check: if device is missing, show error
+  if (!device || !device.device_id) {
+    return (
+      <div className="pb-5 p-4" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+        <button onClick={goBack} className="btn btn-link text-decoration-none p-0 mb-3 fw-bold">
+          <i className="bi bi-arrow-left me-1"></i> {t.back}
+        </button>
+        <div className="card shadow-sm border-0">
+          <div className="card-body text-center py-5">
+            <i className="bi bi-exclamation-triangle fs-1 text-danger mb-3"></i>
+            <h5 className="fw-bold text-danger mb-3">Device Information Missing</h5>
+            <p className="text-muted mb-4">Unable to start WiFi setup. Device ID not found.</p>
+            <button onClick={goBack} className="btn btn-primary btn-lg rounded-pill fw-bold w-100">
+              Go Back to Device
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const {
     wifiStep,
     availableWifi,
@@ -19,7 +41,7 @@ export const WifiSetupPage = ({ device, user, lang, goBack }) => {
     resetSetup,
     handleGoBack,
     startWifiScan
-  } = useWifiSetup(t, device?.device_id, goBack);
+  } = useWifiSetup(t, device.device_id, goBack);
 
   return (
     <div className="pb-5 p-4" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
