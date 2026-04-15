@@ -12,6 +12,7 @@ from bless import (
 )
 from constants import SERVICE_UUID, CHAR_UUID, TIMEOUT_LIMIT
 from bluetooth_manager import BluetoothManager
+from wifi_manager import WiFiManager
 
 
 class VisualGuardServer:
