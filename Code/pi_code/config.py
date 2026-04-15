@@ -8,7 +8,7 @@ import os
 
 # =============== Device Identity ===============
 DEVICE_ID = "PI_001"  # Unique device identifier
-DEVICE_NAME = "Vision Guard Pi 5"  # Device name
+DEVICE_NAME = "Smart Glasses V1"  # Device name
 
 # =============== Supabase Configuration ===============
 SUPABASE_URL = "https://iobnjmawpmtzsiojkauo.supabase.co"

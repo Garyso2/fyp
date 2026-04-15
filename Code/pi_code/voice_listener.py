@@ -19,19 +19,75 @@ if not os.path.exists(model_path):
 model = vosk.Model(model_path)
 p = pyaudio.PyAudio()
 
+# Choose a valid input device whenever possible.
+def select_input_device(pa):
+    preferred_names = ["pcm2902", "texas instruments", "audio codec", "usb"]
+
+    def log_input_devices():
+        print("🎤 Available input devices:")
+        for idx in range(pa.get_device_count()):
+            info = pa.get_device_info_by_index(idx)
+            if info.get('maxInputChannels', 0) > 0:
+                print(f"  [{idx}] {info.get('name')} | channels={info.get('maxInputChannels')} | rate={info.get('defaultSampleRate')}")
+
+    try:
+        info = pa.get_default_input_device_info()
+        info['index'] = int(info.get('index', 0))
+        return info
+    except Exception:
+        pass
+
+    env_device = os.environ.get('VOICE_INPUT_DEVICE')
+    if env_device:
+        for idx in range(pa.get_device_count()):
+            info = pa.get_device_info_by_index(idx)
+            if info.get('maxInputChannels', 0) > 0 and env_device.lower() in info.get('name', '').lower():
+                info['index'] = idx
+                return info
+
+    candidates = []
+    for idx in range(pa.get_device_count()):
+        info = pa.get_device_info_by_index(idx)
+        if info.get('maxInputChannels', 0) > 0:
+            info['index'] = idx
+            name = info.get('name', '').lower()
+            candidates.append(info)
+            if any(pref in name for pref in preferred_names):
+                return info
+
+    if candidates:
+        # Fallback to first available input device if no preferred device is found.
+        log_input_devices()
+        print("🎤 Using first available input device because no preferred device was found.")
+        return candidates[0]
+
+    raise RuntimeError("No input device available")
+
 try:
-    device_info = p.get_default_input_device_info()
+    device_info = select_input_device(p)
     mic_rate = int(device_info.get('defaultSampleRate', 16000))
-except Exception:
-    mic_rate = 16000
+    input_device_index = int(device_info['index'])
+    print(f"🎤 Using input device: {device_info.get('name')} (index={input_device_index})")
+except Exception as e:
+    print(f"❌ Cannot find a microphone input device (Error: {e})")
+    p.terminate()
+    exit(1)
 
 rec = vosk.KaldiRecognizer(model, mic_rate)
 
 try:
-    stream = p.open(format=pyaudio.paInt16, channels=1, rate=mic_rate, input=True, frames_per_buffer=4000)
+    stream = p.open(
+        format=pyaudio.paInt16,
+        channels=1,
+        rate=mic_rate,
+        input=True,
+        input_device_index=input_device_index,
+        frames_per_buffer=4000,
+    )
     stream.start_stream()
 except Exception as e:
     print(f"❌ Cannot open microphone (Error: {e})")
+    p.terminate()
     exit(1)
 
 print("🎤 [Voice Listener] Listening for commands...")
