@@ -13,6 +13,7 @@ from bless import (
 from constants import SERVICE_UUID, CHAR_UUID, TIMEOUT_LIMIT
 from bluetooth_manager import BluetoothManager
 from wifi_manager import WiFiManager
+from config import DEVICE_ID, DEVICE_NAME  # 🔴 Import device config
 
 
 class VisualGuardServer:
@@ -135,10 +136,19 @@ class VisualGuardServer:
             if success:
                 self.is_connected_to_wifi = True
                 print("✅ [WiFi] Connection successful!")
-                # 🔴 Send success message multiple times to ensure delivery
+                
+                # 🔴 Send device info with success status to DB
+                success_response = json.dumps({
+                    "status": "WIFI_SUCCESS",
+                    "device_id": DEVICE_ID,
+                    "device_name": DEVICE_NAME,
+                    "message": "Device connected to WiFi and ready"
+                })
+                
+                # Send response multiple times to ensure delivery
                 for i in range(3):
-                    self.notify_client("WIFI_SUCCESS")
-                    print(f"📡 [WiFi] Sent WIFI_SUCCESS ({i+1}/3)")
+                    self.notify_client(success_response)
+                    print(f"📡 [WiFi] Sent success response ({i+1}/3): {DEVICE_ID}")
                     time.sleep(0.2)
                     
             elif elapsed_time > TIMEOUT_LIMIT:

@@ -235,11 +235,99 @@ export const useBleSetup = (t, goBack) => {
 
   const sendWifiConfig = async () => {
     if (!wifiData.ssid || !wifiData.password) return alert(t.pwdReq);
+    
     setBleStep('connecting_wifi');
+    console.log('🔌 [WiFi Config] Sending WiFi credentials:', wifiData.ssid);
+    
     try {
+      // 🔴 CRITICAL: Start listening for WiFi connection result FIRST
+      console.log('🎧 [WiFi Config] Starting listener for connection result...');
+      let connectionResultReceived = false;
+      let timeoutHandle = null;
+
+      await BleClient.startNotifications(
+        connectedDeviceId,
+        VG_SERVICE_UUID,
+        VG_CHAR_UUID,
+        (value) => {
+          try {
+            if (!value || !value.buffer) return;
+            
+            const text = new TextDecoder().decode(value.buffer).trim();
+            console.log('📨 [WiFi Config] Connection result:', text);
+            
+            // 🔴 CRITICAL: Try to parse as JSON first (includes device_id)
+            let status = null;
+            let respDeviceId = null;
+            
+            try {
+              const jsonData = JSON.parse(text);
+              status = jsonData.status;
+              respDeviceId = jsonData.device_id; // 🔴 Extract device ID from Pi
+              
+              if (respDeviceId) {
+                console.log('📱 [WiFi Config] Device ID received from Pi:', respDeviceId);
+                // Store device ID for later use
+                localStorage.setItem('piDeviceId', respDeviceId);
+              }
+            } catch (e) {
+              // Not JSON, check if it's plain text status
+              status = text;
+            }
+            
+            // Only respond to connection result messages, not WiFi list
+            if (status === 'WIFI_SUCCESS' || text.includes('WIFI_SUCCESS')) {
+              console.log('✅ [WiFi Config] WiFi connection successful!');
+              connectionResultReceived = true;
+              if (timeoutHandle) clearTimeout(timeoutHandle);
+              setBleStep('success');
+              
+            } else if (status === 'WIFI_TIMEOUT' || text.includes('WIFI_TIMEOUT')) {
+              console.log('⏱️  [WiFi Config] WiFi connection timeout');
+              connectionResultReceived = true;
+              if (timeoutHandle) clearTimeout(timeoutHandle);
+              alert(t.wifiTimeout || "WiFi Connection Timeout! Please try again.");
+              setBleStep('select_wifi');
+              
+            } else if (status === 'WIFI_FAIL' || text.includes('WIFI_FAIL')) {
+              console.log('❌ [WiFi Config] WiFi connection failed');
+              connectionResultReceived = true;
+              if (timeoutHandle) clearTimeout(timeoutHandle);
+              alert(t.connFail || "WiFi Connection Failed! Please check SSID and password.");
+              setBleStep('select_wifi');
+              
+            } else {
+              // Ignore other messages (like WiFi list)
+              console.log('↩️️ [WiFi Config] Ignoring non-result message:', text);
+            }
+          } catch (error) {
+            console.error('❌ [WiFi Config] Error processing result:', error);
+          }
+        },
+        { timeout: 30000 }
+      );
+
+      console.log('✅ [WiFi Config] Listener started, now sending credentials...');
+
+      // Send WiFi credentials
       const data = new TextEncoder().encode(JSON.stringify(wifiData));
       await BleClient.write(connectedDeviceId, VG_SERVICE_UUID, VG_CHAR_UUID, data);
-    } catch (error) { alert(t.sendFail); setBleStep('select_wifi'); }
+      console.log('📡 [WiFi Config] WiFi credentials sent');
+
+      // Set timeout for response
+      timeoutHandle = setTimeout(() => {
+        if (!connectionResultReceived) {
+          console.log('⏱️  [WiFi Config] No response from device (45s timeout)');
+          alert('No response from device. Connection timeout.');
+          setBleStep('select_wifi');
+        }
+      }, 45000);  // 45 second timeout
+      
+    } catch (error) {
+      console.error('❌ [WiFi Config] Send failed:', error);
+      alert(t.sendFail || 'Failed to send WiFi config');
+      setBleStep('select_wifi');
+    }
   };
 
   const disconnectDevice = async () => {

@@ -212,15 +212,34 @@ export const useWifiSetup = (t, deviceId, goBack) => {
             const text = new TextDecoder().decode(value.buffer);
             console.log('📨 [WiFi Setup] Connection response:', text);
             
-            // ⚠️ CRITICAL: Check for WIFI_SUCCESS before other checks to avoid false negatives
-            if (text.trim() === 'WIFI_SUCCESS' || text.includes('WIFI_SUCCESS')) {
+            // 🔴 CRITICAL: Try to parse as JSON first (includes device_id)
+            let status = null;
+            let respDeviceId = null;
+            
+            try {
+              const jsonData = JSON.parse(text);
+              status = jsonData.status;
+              respDeviceId = jsonData.device_id; // 🔴 Extract device ID from Pi
+              
+              if (respDeviceId) {
+                console.log('📱 [WiFi Setup] Device ID received from Pi:', respDeviceId);
+                // Store device ID for later database save
+                localStorage.setItem('connectedDeviceId', respDeviceId);
+              }
+            } catch (e) {
+              // Not JSON, check if it's plain text status
+              status = text.trim();
+            }
+            
+            // Check for WIFI_SUCCESS or success status
+            if (status === 'WIFI_SUCCESS' || text.includes('WIFI_SUCCESS')) {
               console.log('✅ [WiFi Setup] WiFi connection successful!');
               setWifiStep('success');
               resultReceived = true;
               setIsLoading(false);
               if (timeoutHandle) clearTimeout(timeoutHandle);
               
-            } else if (text.includes('WIFI_TIMEOUT')) {
+            } else if (status === 'WIFI_TIMEOUT' || text.includes('WIFI_TIMEOUT')) {
               console.log('⏱️ [WiFi Setup] WiFi connection timeout');
               setErrorMessage('Connection timeout. Please check your network.');
               setWifiStep('failed');
@@ -228,7 +247,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
               setIsLoading(false);
               if (timeoutHandle) clearTimeout(timeoutHandle);
               
-            } else if (text.includes('WIFI_FAIL')) {
+            } else if (status === 'WIFI_FAIL' || text.includes('WIFI_FAIL')) {
               console.log('❌ [WiFi Setup] WiFi connection failed');
               setErrorMessage('Connection failed. Please check SSID and password.');
               setWifiStep('failed');
