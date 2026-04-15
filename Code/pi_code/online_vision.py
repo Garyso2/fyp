@@ -120,7 +120,7 @@ def get_voice_command():
 
 def signal_handler(sig, frame):
     global running
-    print("\n🛑 Stopping Online Vision...")
+    print("\n🛑 [Online Vision] Stopping...")
     running = False
     sys.exit(0)
 
@@ -138,9 +138,9 @@ def main():
     walk_gesture_count = 0  
     last_nearest_obj = ""   
     
-    print(f"🚀 Online Vision Started | Server: {SERVER_IP}")
+    print(f"🚀 [Online Vision] Started | Server: {SERVER_IP}")
     if not check_server():
-        print("❌ Server unreachable. Exiting Online Vision.")
+        print("❌ [Online Vision] Server unreachable. Exiting.")
         return
 
     speak("Online navigation ready.", force=True)
@@ -154,7 +154,7 @@ def main():
             if voice_cmd and voice_cmd.startswith("ASK_AI:"):
                 question = voice_cmd.split("ASK_AI:", 1)[1].strip()
                 if not question: question = "Describe what you see."
-                
+                print(f"❓ [Online Vision - Q&A Mode] Question: {question}")
                 speak("Let me look.", force=True)
                 
                 img_bytes = capture_jpeg_memory(1920, 1080, 85) 
@@ -166,9 +166,11 @@ def main():
                             speak(answer, force=True)
                             wait_for_speech_to_finish()
                         else:
+                            print(f"❌ [Online Vision - Q&A Mode] Server error")
                             speak("Server processing error.", force=True)
                             wait_for_speech_to_finish()
-                    except:
+                    except Exception as e:
+                        print(f"❌ [Online Vision - Q&A Mode] Network error: {e}")
                         speak("Network error while asking AI.", force=True)
                         wait_for_speech_to_finish()
                 else:
@@ -180,6 +182,7 @@ def main():
 
             # Original PHOTO command
             if voice_cmd == "PHOTO":
+                print(f"📷 [Online Vision - Switching to Analysis Mode]")
                 speak("Analysis mode.", force=True)
                 state = "FINDING_PREP"
                 walk_gesture_count = 0
@@ -205,13 +208,14 @@ def main():
                 nearest_obj = data.get("nearest_object", "")
                 if nearest_obj: last_nearest_obj = nearest_obj
                 
-                print(f"🚶 [YOLO] Obstacle: {obstacle} | Color: {color} | Gesture: {gesture} | Nearest: {nearest_obj}")
+                print(f"🚶 [Online Vision - Walking] Obstacle: {obstacle} | Color: {color} | Gesture: {gesture} | Nearest: {nearest_obj}")
 
                 # Handle gesture
                 if switch or gesture == "Open_Palm":
                     if time.time() - resume_walking_time > 5.0:
                         walk_gesture_count += 1
                         if walk_gesture_count >= 3:
+                            print(f"🖐️  [Online Vision - Gesture Detected] Switching to Analysis Mode")
                             speak("Analysis mode.", force=True); state = "FINDING_PREP"; walk_gesture_count = 0; time.sleep(1); continue
                 else: walk_gesture_count = 0 
 
@@ -235,7 +239,7 @@ def main():
                         was_in_danger = False
 
             except Exception as e:
-                print(f"⚠️ Network Error: {e}")
+                print(f"⚠️ [Online Vision] Network Error: {e}")
                 time.sleep(0.5)
 
             sleep_time = WALK_LOOP_DELAY - (time.time() - start_time)

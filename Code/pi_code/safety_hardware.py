@@ -114,9 +114,9 @@ def check_ultrasonic():
         
         if distance < ULTRASONIC_DANGER_DISTANCE:
             # Danger: object too close
-            speak(f"Warning! Object detected at {distance_cm:.1f} centimeters!")
-            
             if can_report_danger('ultrasonic'):
+                # Only speak when reporting (applies cooldown to both speech and logging)
+                speak(f"Warning! Object detected at {distance_cm:.1f} centimeters!")
                 content = f"Object detected in front at distance {distance_cm:.1f} cm"
                 report_danger('ultrasonic', content)
                 print(f"⚠️  [Danger] Ultrasonic: {content}")
@@ -141,9 +141,9 @@ def check_gyroscope():
         
         if total_gyro > GYRO_DANGER_THRESHOLD:
             # Danger: excessive shaking, possible fall or injury
-            speak("Alert! Device is shaking violently! Possible fall detected!")
-            
             if can_report_danger('gyroscope'):
+                # Only speak when reporting (applies cooldown to both speech and logging)
+                speak("Alert! Device is shaking violently! Possible fall detected!")
                 content = f"Fall detection - Excessive shaking detected (angular velocity: {total_gyro:.1f}°/s)"
                 report_danger('gyroscope', content)
                 print(f"⚠️  [Danger] Gyroscope: {content}")

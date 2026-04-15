@@ -16,7 +16,7 @@ CMD_FILE = os.path.join(RUN_DIR, "voice_cmd.txt")
 print("🔴 [Offline Vision] Loading local YOLO model...")
 model = YOLO('yolov8n.pt')
 print("✅ [Offline Vision] YOLO model loaded successfully!")
-print("🎤 [Offline Vision] Waiting for 'PHOTO' command from voice listener...")
+print("🎤 [Offline Vision - Idle] Waiting for voice command...")
 
 while True:
     try:
@@ -28,7 +28,7 @@ while True:
                 
                 # If photo command received, take photo and analyze
                 if cmd == "PHOTO":
-                    print("📷 [Offline Vision] PHOTO command received! Taking picture...")
+                    print("📷 [Offline Vision - Analysis Mode] PHOTO command received! Capturing...")
                     
                     # Capture image
                     result = subprocess.run(
@@ -51,21 +51,21 @@ while True:
                         # Generate speech response
                         if objects:
                             sentence = "I see " + ", ".join(objects)
-                            print(f"✅ [Offline Vision] Detected: {sentence}")
+                            print(f"✅ [Offline Vision - Analysis Mode] Detected: {sentence}")
                             
                             try:
                                 tts = gTTS(sentence, lang="en")
                                 tts.save(AUDIO_PATH)
                                 subprocess.run(["mpg123", "-q", AUDIO_PATH], timeout=10)
                             except Exception as e:
-                                print(f"⚠️ TTS Error: {e}")
+                                print(f"⚠️ [Offline Vision - Analysis Mode] TTS Error: {e}")
                         else:
-                            print("⚠️ [Offline Vision] No objects detected.")
+                            print("⚠️ [Offline Vision - Analysis Mode] No objects detected.")
                         
                         # Clear command file after processing
                         os.remove(CMD_FILE)
                     else:
-                        print("❌ [Offline Vision] Failed to capture image")
+                        print("❌ [Offline Vision - Analysis Mode] Failed to capture image")
                         
             except Exception as e:
                 print(f"❌ [Offline Vision] Error reading command: {e}")
@@ -74,5 +74,5 @@ while True:
         time.sleep(0.5)
         
     except Exception as e:
-        print(f"❌ [Offline Vision] Error: {e}")
+        print(f"❌ [Offline Vision - Main Loop] Error: {e}")
         time.sleep(1)
