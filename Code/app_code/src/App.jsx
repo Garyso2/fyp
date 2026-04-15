@@ -114,7 +114,7 @@ function App() {
       )}
 
       {currentPage === 'wifiSetup' && !selectedDevice && (
-        <div style={{ paddingTop: '60px' }} className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+        <div className="d-flex justify-content-center align-items-center" style={{ paddingTop: '60px', minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
           <div className="card shadow-sm">
             <div className="card-body text-center p-5">
               <i className="bi bi-exclamation-triangle fs-1 text-danger mb-3"></i>

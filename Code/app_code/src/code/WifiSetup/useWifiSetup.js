@@ -30,12 +30,10 @@ export const useWifiSetup = (t, deviceId, goBack) => {
 
   const cleanupListeners = async () => {
     try {
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
-      if (connected && connected.length > 0) {
-        const deviceId = connected[0].deviceId;
+      if (activeListenerId) {
+        console.log('🧹 [WiFi Setup] Stopping BLE notifications for device:', activeListenerId);
         try {
-          console.log('🧹 [WiFi Setup] Stopping all BLE notifications...');
-          await BleClient.stopNotifications(deviceId, VG_SERVICE_UUID, VG_CHAR_UUID);
+          await BleClient.stopNotifications(activeListenerId, VG_SERVICE_UUID, VG_CHAR_UUID);
           console.log('✅ [WiFi Setup] All notifications stopped');
         } catch (e) {
           console.log('ℹ️ [WiFi Setup] Listener stop (non-critical):', e.message);
@@ -49,8 +47,15 @@ export const useWifiSetup = (t, deviceId, goBack) => {
 
   const stopCurrentListener = async () => {
     if (activeListenerId) {
-      console.log('🛑 [WiFi Setup] Stopping previous listener...');
-      await cleanupListeners();
+      console.log('🛑 [WiFi Setup] Stopping previous listener for device:', activeListenerId);
+      try {
+        // Force stop notifications
+        await BleClient.stopNotifications(activeListenerId, VG_SERVICE_UUID, VG_CHAR_UUID);
+        console.log('✅ [WiFi Setup] Listener stopped successfully');
+      } catch (e) {
+        console.log('⚠️ [WiFi Setup] Listener stop error (continuing anyway):', e.message);
+      }
+      setActiveListenerId(null);
     }
   };
 
@@ -113,6 +118,12 @@ export const useWifiSetup = (t, deviceId, goBack) => {
             const text = new TextDecoder().decode(value.buffer);
             console.log('📨 [WiFi Setup] WiFi scan response:', text);
             
+            // 🔴 CRITICAL: If message is not JSON, ignore it (likely WIFI_SUCCESS from connection)
+            if (!text.includes('{') && !text.includes('ssids')) {
+              console.log('⏭️  [WiFi Setup] Non-WiFi list message received, ignoring:', text);
+              return;  // Don't accumulate non-JSON messages
+            }
+            
             // Handle multi-part messages
             setIncompleteData(prev => {
               const combined = prev + text;
@@ -173,7 +184,8 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       // 🔴 CRITICAL: Stop any previous listeners (WiFi scan) before starting new listener
       console.log('⚠️ [WiFi Setup] Stopping previous WiFi scan listener...');
       await stopCurrentListener();
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for listener to stop
+      console.log('⏳ [WiFi Setup] Waiting 1 second for listener to fully stop...');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second for listener to stop
 
       // Get connected device
       const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
