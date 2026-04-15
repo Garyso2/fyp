@@ -6,7 +6,7 @@ const VG_CHAR_UUID = '51ff12cb-fdf0-4222-800f-b91f37d3d224';
 
 export const useWifiSetup = (t, deviceId, goBack) => {
   // --- State Management ---
-  const [wifiStep, setWifiStep] = useState('check_connection');  // check_connection -> scanning -> select_wifi -> connecting -> success/failed
+  const [wifiStep, setWifiStep] = useState('check_connection');
   const [availableWifi, setAvailableWifi] = useState([]);
   const [selectedSSID, setSelectedSSID] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
@@ -14,7 +14,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [incompleteData, setIncompleteData] = useState('');
-  const [listeners, setListeners] = useState([]); // Track BLE listeners for cleanup
+  const [activeListenerId, setActiveListenerId] = useState(null); // Track active listener
 
   // --- Detect if device is already connected via BLE ---
   useEffect(() => {
@@ -32,18 +32,26 @@ export const useWifiSetup = (t, deviceId, goBack) => {
     try {
       const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
       if (connected && connected.length > 0) {
-        for (const listener of listeners) {
-          try {
-            await BleClient.stopNotifications(listener.deviceId, VG_SERVICE_UUID, VG_CHAR_UUID);
-          } catch (e) {
-            console.log('Listener cleanup error (non-critical):', e);
-          }
+        const deviceId = connected[0].deviceId;
+        try {
+          console.log('🧹 [WiFi Setup] Stopping all BLE notifications...');
+          await BleClient.stopNotifications(deviceId, VG_SERVICE_UUID, VG_CHAR_UUID);
+          console.log('✅ [WiFi Setup] All notifications stopped');
+        } catch (e) {
+          console.log('ℹ️ [WiFi Setup] Listener stop (non-critical):', e.message);
         }
       }
     } catch (e) {
-      console.log('Cleanup error (non-critical):', e);
+      console.log('ℹ️ [WiFi Setup] Cleanup error (non-critical):', e.message);
     }
-    setListeners([]);
+    setActiveListenerId(null);
+  };
+
+  const stopCurrentListener = async () => {
+    if (activeListenerId) {
+      console.log('🛑 [WiFi Setup] Stopping previous listener...');
+      await cleanupListeners();
+    }
   };
 
   const checkBleConnection = async () => {
@@ -129,6 +137,9 @@ export const useWifiSetup = (t, deviceId, goBack) => {
         }
       );
 
+      console.log('🎯 [WiFi Setup] Scan listener started');
+      setActiveListenerId(deviceId);
+
       // Send scan command to Pi
       const scanCommand = 'SCAN_WIFI';
       const data = new TextEncoder().encode(scanCommand);
@@ -159,6 +170,11 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       setWifiStep('connecting');
       console.log('🔌 [WiFi Setup] Attempting to connect to:', selectedSSID);
 
+      // 🔴 CRITICAL: Stop any previous listeners (WiFi scan) before starting new listener
+      console.log('⚠️ [WiFi Setup] Stopping previous WiFi scan listener...');
+      await stopCurrentListener();
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for listener to stop
+
       // Get connected device
       const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
       
@@ -167,6 +183,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       }
 
       const deviceId = connected[0].deviceId;
+      console.log('📱 [WiFi Setup] Device ID:', deviceId);
       
       // Listen for connection result
       let resultReceived = false;
@@ -212,6 +229,9 @@ export const useWifiSetup = (t, deviceId, goBack) => {
           }
         }
       );
+
+      console.log('🎯 [WiFi Setup] Connection listener started');
+      setActiveListenerId(deviceId);
 
       // Send WiFi credentials
       const wifiConfig = JSON.stringify({
