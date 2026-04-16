@@ -244,7 +244,8 @@ export const useBleSetup = (t, goBack) => {
       console.log('🎧 [WiFi Config] Starting listener for connection result...');
       let connectionResultReceived = false;
       let timeoutHandle = null;
-
+      let incompleteMsgBuffer = ''; // Handle message fragmentation
+      
       await BleClient.startNotifications(
         connectedDeviceId,
         VG_SERVICE_UUID,
@@ -254,25 +255,38 @@ export const useBleSetup = (t, goBack) => {
             if (!value || !value.buffer) return;
             
             const text = new TextDecoder().decode(value.buffer).trim();
-            console.log('📨 [WiFi Config] Connection result:', text);
+            console.log('📨 [WiFi Config] Raw message:', text);
             
-            // 🔴 CRITICAL: Try to parse as JSON first (includes device_id)
+            // 🔴 CRITICAL: Handle message fragmentation (JSON might be split across multiple BLE packets)
+            incompleteMsgBuffer += text;
+            console.log('📦 [WiFi Config] Buffer length:', incompleteMsgBuffer.length);
+            
+            // Try to parse as JSON
             let status = null;
             let respDeviceId = null;
             
             try {
-              const jsonData = JSON.parse(text);
-              status = jsonData.status;
-              respDeviceId = jsonData.device_id; // 🔴 Extract device ID from Pi
-              
-              if (respDeviceId) {
-                console.log('📱 [WiFi Config] Device ID received from Pi:', respDeviceId);
-                // Store device ID for later use
-                localStorage.setItem('piDeviceId', respDeviceId);
+              // Try to find complete JSON object
+              const jsonMatch = incompleteMsgBuffer.match(/\{.*\}/);
+              if (jsonMatch) {
+                const jsonData = JSON.parse(jsonMatch[0]);
+                status = jsonData.status;
+                respDeviceId = jsonData.device_id; // 🔴 Extract device ID from Pi
+                
+                if (respDeviceId) {
+                  console.log('📱 [WiFi Config] Device ID received from Pi:', respDeviceId);
+                  // Store device ID in localStorage for later binding
+                  localStorage.setItem('piDeviceId', respDeviceId);
+                  console.log('💾 [WiFi Config] Device ID saved to localStorage');
+                }
+                incompleteMsgBuffer = ''; // Reset buffer after successful parse
+              } else {
+                console.log('⏳ [WiFi Config] Waiting for complete JSON...');
+                return;
               }
-            } catch (e) {
-              // Not JSON, check if it's plain text status
-              status = text;
+            } catch (parseError) {
+              console.log('⏳ [WiFi Config] JSON parse pending, buffer:', incompleteMsgBuffer.substring(0, 50));
+              return;
             }
             
             // Only respond to connection result messages, not WiFi list

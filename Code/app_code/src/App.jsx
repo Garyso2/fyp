@@ -7,9 +7,18 @@ import { WifiSetupPage } from './pages/WifiSetupPage';
 import { BluetoothSetupPage } from './pages/BluetoothSetupPage';
 import { Header } from './components/Header';
 
+const SESSION_KEY = 'app_user_session';
+
 function App() {
   // ============ State Management ============
-  const [user, setUser] = useState(null);
+  // Restore saved session on startup; cleared on reinstall or explicit logout
+  const [user, setUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SESSION_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+    }
+  });
   const [lang, setLang] = useState('en');
   const [textSize, setTextSize] = useState('medium');
   const [selectedDevice, setSelectedDevice] = useState(null);
@@ -19,6 +28,8 @@ function App() {
 
   const handleLoginSuccess = (userData) => {
     setUser(userData);
+    // Persist session so app reopens without requiring login
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(userData)); } catch { /* ignore */ }
     // Read language preference from user data
     if (userData?.language) {
       setLang(userData.language);
@@ -27,6 +38,8 @@ function App() {
   };
 
   const handleLogout = () => {
+    // Clear persisted session on explicit logout
+    try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
     setUser(null);
     setCurrentPage('dashboard');
     setSelectedDevice(null);

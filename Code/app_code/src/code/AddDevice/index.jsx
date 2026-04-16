@@ -21,8 +21,15 @@ const AddDevice = ({ user, goBack, t }) => {
 
   // 3. 處理「完成」按鈕嘅動作：綁定 Database -> 斷開藍牙 -> 返回主頁
   const handleFinishAndBind = async () => {
-    // 防呆：確保真係攞到 Device ID 先去 Call API
-    const targetDeviceId = connectedDeviceId || "PI_VG_8899"; 
+    // 🔴 CRITICAL: Get device_id from localStorage (sent by Pi during WiFi success)
+    const piDeviceId = localStorage.getItem('piDeviceId');
+    
+    if (!piDeviceId) {
+      alert('❌ Device ID not received from Pi. Please restart WiFi setup.');
+      return;
+    }
+    
+    console.log('📱 [Bind Device] Using Pi device_id from localStorage:', piDeviceId);
 
     try {
       console.log("正在將 Pi 綁定至帳號...");
@@ -30,8 +37,8 @@ const AddDevice = ({ user, goBack, t }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': 'yoloProject2026' },
         body: JSON.stringify({
-          user_id: user?.user_id, // 確保有 user.user_id 先傳
-          device_id: targetDeviceId,
+          user_id: user?.user_id,
+          device_id: piDeviceId,  // 🔴 Use Pi's device_id, not BLE device_id
           device_name: 'My VisualGuard Pi'
         })
       });
@@ -129,7 +136,7 @@ const AddDevice = ({ user, goBack, t }) => {
               <h4 className="fw-bold">{t.setupComplete || '設定完成!'}</h4>
               <p className="text-muted">{t.deviceConnected || '裝置已準備就緒'}</p>
               <div className="alert alert-light border border-success mt-4 mb-4 text-start">
-                <strong>Device ID:</strong> <span className="text-primary">{connectedDeviceId || "PI_VG_8899"}</span><br/>
+                <strong>Device ID:</strong> <span className="text-primary">{localStorage.getItem('piDeviceId') || "PI_VG_8899"}</span><br/>
                 <strong>Network:</strong> {wifiData.ssid}
               </div>
               {/* 👇 呢度將 onClick 換咗做 handleFinishAndBind */}

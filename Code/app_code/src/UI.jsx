@@ -587,9 +587,19 @@ export const AddDevice = ({ user, goBack, t }) => {
   };
 
   const handleFinish = async () => {
+    // 🔴 CRITICAL: Get device_id from localStorage (sent by Pi during WiFi success)
+    const piDeviceId = localStorage.getItem('piDeviceId');
+    
+    if (!piDeviceId) {
+      alert('❌ Device ID not received from Pi. Please restart WiFi setup.');
+      return;
+    }
+    
+    console.log('📱 [Bind Device] Using Pi device_id from localStorage:', piDeviceId);
+
     const bindResult = await functions.handleBindDevice({
       user_id: user?.user_id,
-      device_id: connectedDeviceId || 'PI_VG_8899',
+      device_id: piDeviceId,  // 🔴 Use Pi's device_id from localStorage
       device_name: 'My VisualGuard Pi'
     });
 

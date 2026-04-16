@@ -12,6 +12,8 @@ export const DeviceLogsPage = ({ user, device, onBack, onSetupWifi, onSetupBluet
 
   const [filterType, setFilterType] = useState(''); // Filter by type
   const [filterDate, setFilterDate] = useState(''); // Filter by date
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   // Use translations from i18n.js
   const t = i18n[lang] || i18n.en;
@@ -86,6 +88,10 @@ export const DeviceLogsPage = ({ user, device, onBack, onSetupWifi, onSetupBluet
     return filtered;
   }, [logs, filterType, filterDate]);
 
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedLogs.length / ITEMS_PER_PAGE));
+  const paginatedLogs = filteredAndSortedLogs.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
   // 🚨 Final protection: show loading screen if device data not loaded yet, prevent white screen crash
   if (!device) {
     return (
@@ -143,25 +149,26 @@ export const DeviceLogsPage = ({ user, device, onBack, onSetupWifi, onSetupBluet
         <div className="card-body">
           <div className="row g-2">
             <div className="col-md-6">
-              <label className="form-label small fw-bold mb-1">Filter by Type</label>
+              <label className="form-label small fw-bold mb-1">Type</label>
               <select 
                 className="form-select form-select-sm"
                 value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
+                onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
               >
                 <option value="">All Types</option>
-                <option value="OCR">OCR</option>
-                <option value="OBJECT">OBJECT</option>
-                <option value="COLOR">COLOR</option>
+                <option value="AI_CHAT">AI_CHAT</option>
+                <option value="IMAGE_CAPTURE">IMAGE_CAPTURE</option>
+                <option value="OBSTACLE_WARNING">OBSTACLE_WARNING</option>
+                <option value="FALL_DETECTION">FALL_DETECTION</option>
               </select>
             </div>
             <div className="col-md-6">
-              <label className="form-label small fw-bold mb-1">Filter by Date</label>
+              <label className="form-label small fw-bold mb-1">Data</label>
               <input 
                 type="date" 
                 className="form-control form-control-sm"
                 value={filterDate}
-                onChange={(e) => setFilterDate(e.target.value)}
+                onChange={(e) => { setFilterDate(e.target.value); setCurrentPage(1); }}
               />
             </div>
           </div>
@@ -174,6 +181,7 @@ export const DeviceLogsPage = ({ user, device, onBack, onSetupWifi, onSetupBluet
                 onClick={() => {
                   setFilterType('');
                   setFilterDate('');
+                  setCurrentPage(1);
                 }}
               >
                 <i className="bi bi-x-circle me-1"></i> 清除篩選
@@ -195,7 +203,7 @@ export const DeviceLogsPage = ({ user, device, onBack, onSetupWifi, onSetupBluet
         </div>
       ) : (
         <div>
-          {filteredAndSortedLogs.map((log) => (
+          {paginatedLogs.map((log) => (
             <div key={log.activity_id} className="card shadow-sm border-0 mb-3">
               <div
                 className="card-body"
@@ -230,6 +238,25 @@ export const DeviceLogsPage = ({ user, device, onBack, onSetupWifi, onSetupBluet
               </div>
             </div>
           ))}
+
+          {/* Pagination Controls */}
+          <div className="d-flex justify-content-between align-items-center mt-3">
+            <button
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <i className="bi bi-chevron-left me-1"></i> Previous
+            </button>
+            <span className="text-muted small">Page {currentPage} / {totalPages}</span>
+            <button
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next <i className="bi bi-chevron-right ms-1"></i>
+            </button>
+          </div>
         </div>
       )}
     </div>
