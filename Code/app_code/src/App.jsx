@@ -17,6 +17,7 @@ function App() {
       const saved = localStorage.getItem(SESSION_KEY);
       return saved ? JSON.parse(saved) : null;
     } catch {
+      return null;
     }
   });
   const [lang, setLang] = useState('en');

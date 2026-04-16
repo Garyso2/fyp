@@ -44,13 +44,37 @@ export const UserDB = {
   },
 
   /**
+   * Generate the next user ID in format U001, U002, ...
+   * Queries all existing IDs and increments the highest numeric one
+   * @returns {Promise<string>} e.g. "U003"
+   */
+  getNextUserId: async () => {
+    const { data } = await supabase
+      .from('user')
+      .select('user_id');
+
+    let max = 0;
+    if (data) {
+      for (const row of data) {
+        const match = row.user_id?.match(/^U(\d+)$/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > max) max = num;
+        }
+      }
+    }
+    const next = max + 1;
+    return 'U' + String(next).padStart(3, '0');
+  },
+
+  /**
    * Create new user
    * @param {Object} userData - User data { username, password, language }
    * @returns {Promise<Object>} Newly created user object
    */
   create: async (userData) => {
     const { username, password, language = 'en' } = userData;
-    const userId = 'usr_' + Date.now();
+    const userId = await UserDB.getNextUserId();
 
     const { data, error } = await supabase
       .from('user')
