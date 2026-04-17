@@ -91,11 +91,42 @@ except Exception as e:
     exit(1)
 
 print("🎤 [Voice Listener] Listening for commands...")
-ask_mode = False  # 🌟 Added: question mode
+chat_room_active = False  # 🌟 Chat Room mode indicator
+SPEAKING_LOCK = "/tmp/speaking.lock"
+POST_SPEECH_COOLDOWN = 1.5  # Seconds to ignore mic after device stops speaking
+
+# Clear any stale lock file left over from a previous crash
+try:
+    if os.path.exists(SPEAKING_LOCK):
+        os.remove(SPEAKING_LOCK)
+        print("🔇 [Voice Listener] Cleared stale speaking.lock")
+except: pass
+
+was_speaking = False      # Track previous speaking state for transition detection
+speech_ended_time = 0.0   # Timestamp when device last finished speaking
 
 while True:
     try:
         data = stream.read(4000, exception_on_overflow=False)
+
+        currently_speaking = os.path.exists(SPEAKING_LOCK)
+
+        # 🔇 If device is currently speaking, flush buffer and skip recognition
+        if currently_speaking:
+            was_speaking = True
+            continue  # Discard buffered audio, do NOT call AcceptWaveform
+
+        # 🔇 Detect transition: device just stopped speaking → start cooldown
+        if was_speaking and not currently_speaking:
+            speech_ended_time = time.time()
+            was_speaking = False
+
+        # 🔇 Post-speech cooldown: ignore mic for a moment after device stops
+        if speech_ended_time > 0.0 and (time.time() - speech_ended_time < POST_SPEECH_COOLDOWN):
+            continue  # Still in cooldown, discard audio
+        else:
+            speech_ended_time = 0.0  # Cooldown done, reset
+
         if rec.AcceptWaveform(data):
             res = _json.loads(rec.Result())
             text = res.get("text", "").lower().strip()
@@ -104,37 +135,42 @@ while True:
             
             # Fix common speech recognition errors
             text = text.replace("a i", "ai").replace("hey i", "hey ai")
+            # Normalize common Vosk mishearings of "hi ai" / "hey ai"
+            text = text.replace("high ai", "hi ai").replace("hi i", "hi ai")
+            text = text.replace("hi a ", "hi ai ").replace("hi a.", "hi ai")
+            text = text.replace("hey a ", "hey ai ").replace("hey a.", "hey ai")
+            text = text.replace("hi eye", "hi ai").replace("hey eye", "hey ai")
             print(f"👂 Recognized: {text}")
 
-            # 🌟 Added logic: Hi AI Q&A
-            if "hi ai" in text or "hey ai" in text:
-                # Try to extract the question after "hi ai"
-                keyword = "hi ai" if "hi ai" in text else "hey ai"
-                question = text.split(keyword)[-1].strip()
-                
-                if question:
-                    # If question is included in same sentence (e.g., "hi ai what is this")
-                    with open(CMD_FILE, "w") as f: f.write(f"ASK_AI:{question}")
-                    print(f"🎤 Triggered AI Question: {question}")
-                    ask_mode = False
-                else:
-                    # If only "hi ai" is said, wait for next sentence as question
-                    ask_mode = True
-                    print("🎤 AI is waiting for your question...")
-                    
-            elif ask_mode:
-                # Next sentence is treated as question
-                with open(CMD_FILE, "w") as f: f.write(f"ASK_AI:{text}")
-                print(f"🎤 Captured AI Question: {text}")
-                ask_mode = False
+            def is_wake_word(t):
+                """Catch all common Vosk mishearings of the wake word."""
+                triggers = ["hi ai", "hey ai", "hi all", "hey all", "high i", "hi i"]
+                return any(tr in t for tr in triggers)
 
-            # Original photo and exit logic
+            # 🌟 Chat Room Mode: All sentences become AI questions
+            if is_wake_word(text):
+                chat_room_active = True
+                with open(CMD_FILE, "w") as f: f.write("CHAT_ROOM_OPEN")
+                print("💬 Chat Room OPENED - Device will greet. Say 'bye' to exit.")
+                
+            elif "bye" in text and chat_room_active:
+                chat_room_active = False
+                with open(CMD_FILE, "w") as f: f.write("CHAT_ROOM_EXIT")
+                print("💬 Chat Room CLOSED")
+                
+            elif chat_room_active:
+                # In chat room: every sentence becomes an AI question
+                with open(CMD_FILE, "w") as f: f.write(f"ASK_AI:{text}")
+                print(f"💬 [Chat Room] Question: {text}")
+
+            # Photo commands (only triggering once)
             elif "photo" in text or "snap" in text or "take phone" in text:
-                with open(CMD_FILE, "w") as f: f.write("PHOTO")
-                ask_mode = False
+                with open(CMD_FILE, "w") as f: f.write("PHOTO_ONCE")
+                print(f"📷 Photo command sent (single execution)")
+                
             elif "exit" in text or "walk" in text:
                 with open(CMD_FILE, "w") as f: f.write("EXIT_PHOTO")
-                ask_mode = False
+                print(f"🚶 Exit walking mode")
                 
     except Exception as e:
         time.sleep(0.1)

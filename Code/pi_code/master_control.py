@@ -158,5 +158,5 @@ def main():
             if voice_proc: voice_proc.terminate()
             break
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     main()

@@ -38,6 +38,12 @@ last_spoken_time = 0
 current_tts_process = None
 last_danger_time = 0
 
+# Clear any stale speaking lock from previous run
+try:
+    if os.path.exists("/tmp/speaking.lock"):
+        os.remove("/tmp/speaking.lock")
+except: pass
+
 # ================= Voice Speaking Functionality =================
 def speak(text, force=False):
     global last_spoken_message, last_spoken_time, current_tts_process
@@ -69,6 +75,11 @@ def speak(text, force=False):
     subprocess.run(["pkill", "-f", "mpg123"], stderr=subprocess.DEVNULL)
     subprocess.run(["pkill", "-f", "espeak"], stderr=subprocess.DEVNULL)
 
+    # 🔇 Create speaking lock so mic won't pick up device's own voice
+    try:
+        with open("/tmp/speaking.lock", "w") as f: f.write(str(time.time()))
+    except: pass
+
     # 🌟 Use Google TTS (MP3)
     try:
         audio_path = os.path.join(RUN_DIR, "ai_speech.mp3")
@@ -86,6 +97,10 @@ def wait_for_speech_to_finish(timeout=15):
     while current_tts_process.poll() is None:
         time.sleep(0.1)
         if time.time() - start_wait > timeout: break
+    # 🔇 Remove speaking lock so mic resumes listening
+    try:
+        if os.path.exists("/tmp/speaking.lock"): os.remove("/tmp/speaking.lock")
+    except: pass
 
 # ================= Camera and Network Helpers =================
 def capture_jpeg_memory(width, height, quality=25):
@@ -153,12 +168,16 @@ def main():
             # 🌟 Added: Handle AI Q&A commands
             if voice_cmd and voice_cmd.startswith("ASK_AI:"):
                 question = voice_cmd.split("ASK_AI:", 1)[1].strip()
-                if not question: question = "Describe what you see."
+                # Ignore very short/empty strings — likely mic echo (e.g. "hi", "bye")
+                if len(question.split()) < 2:
+                    print(f"⚠️ [Online Vision - Q&A Mode] Ignoring too-short input: '{question}'")
+                    resume_walking_time = time.time()
+                    continue
                 print(f"❓ [Online Vision - Q&A Mode] Question: {question}")
-                speak("Let me look.", force=True)
                 
-                img_bytes = capture_jpeg_memory(1920, 1080, 85) 
+                img_bytes = capture_jpeg_memory(1920, 1080, 85)
                 if img_bytes:
+                    speak("Let me look.", force=True)
                     try:
                         resp = session.post(URL_ASK, data=img_bytes, params={"question": question}, timeout=20)
                         if resp.status_code == 200:
@@ -167,11 +186,11 @@ def main():
                             wait_for_speech_to_finish()
                         else:
                             print(f"❌ [Online Vision - Q&A Mode] Server error")
-                            speak("Server processing error.", force=True)
+                            speak("Server error, please try again.", force=True)
                             wait_for_speech_to_finish()
                     except Exception as e:
                         print(f"❌ [Online Vision - Q&A Mode] Network error: {e}")
-                        speak("Network error while asking AI.", force=True)
+                        speak("Cannot reach server, please try again.", force=True)
                         wait_for_speech_to_finish()
                 else:
                     speak("Camera error.", force=True)
@@ -180,8 +199,24 @@ def main():
                 resume_walking_time = time.time()
                 continue
 
-            # Original PHOTO command
-            if voice_cmd == "PHOTO":
+            # 🌟 Chat Room Open - greet the user
+            if voice_cmd == "CHAT_ROOM_OPEN":
+                print(f"💬 [Online Vision] Chat Room opened")
+                speak("Hi.", force=True)
+                wait_for_speech_to_finish()
+                resume_walking_time = time.time()
+                continue
+
+            # 🌟 Chat Room Exit - gracefully exit and resume walking
+            if voice_cmd == "CHAT_ROOM_EXIT":
+                print(f"💬 [Online Vision] Chat Room ended by user")
+                speak("Bye.", force=True)
+                wait_for_speech_to_finish()
+                resume_walking_time = time.time()
+                continue
+
+            # Photo command (single execution)
+            if voice_cmd == "PHOTO_ONCE":
                 print(f"📷 [Online Vision - Switching to Analysis Mode]")
                 speak("Analysis mode.", force=True)
                 state = "FINDING_PREP"
@@ -272,7 +307,7 @@ def main():
 
         elif state == "WAIT_FOR_EXIT":
             voice_cmd = get_voice_command()
-            if voice_cmd == "PHOTO":
+            if voice_cmd == "PHOTO_ONCE":
                 speak("One more time.", force=True); state = "FINDING_PREP"; time.sleep(2); continue
             elif voice_cmd == "EXIT_PHOTO":
                 speak("Walking mode.", force=True); state = "WALKING"; resume_walking_time = time.time(); time.sleep(2); continue
