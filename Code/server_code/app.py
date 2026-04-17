@@ -14,7 +14,7 @@ from collections import deque, Counter
 import openai
 import base64
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from supabase import Client, create_client
 
@@ -191,7 +191,7 @@ class UserCreate(BaseModel):
 # ================= 🧠 核心邏輯 =================
 
 def get_gesture(img):
-    """檢測手勢：Open_Palm (回走路模式) / Victory (再影一次)"""
+    """保留 Open_Palm (切換模式) 及 Victory (再影一次)"""
     small_img = cv2.resize(img, (320, 240))
     img_rgb = cv2.cvtColor(small_img, cv2.COLOR_BGR2RGB)
     results = hands_detector.process(img_rgb)
@@ -199,34 +199,17 @@ def get_gesture(img):
     if results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
             lm = hand_landmarks.landmark
+            # 判斷四指是否伸直 (食指:8, 中指:12, 無名指:16, 尾指:20)
+            fingers_up = [lm[i].y < lm[i-2].y for i in [8, 12, 16, 20]]
             
-            # --- 手指伸直判定 (tip.y < pip.y) ---
-            index_up = lm[8].y < lm[6].y
-            middle_up = lm[12].y < lm[10].y
-            ring_up = lm[16].y < lm[14].y
-            pinky_up = lm[20].y < lm[18].y
-
-            # --- 手指伸直強度 (tip 到 mcp 距離，過濾微微彎曲的誤判) ---
-            def finger_ext(tip_idx, mcp_idx):
-                return abs(lm[tip_idx].y - lm[mcp_idx].y)
-            
-            index_ext = finger_ext(8, 5)
-            middle_ext = finger_ext(12, 9)
-            ring_ext = finger_ext(16, 13)
-            pinky_ext = finger_ext(20, 17)
-            
-            MIN_EXT = 0.09  # 中間值：過濾隨意手型但不擋正常張手
-
-            # --- Open_Palm: 4 隻手指全部伸直 + 有足夠伸展 ---
-            if (index_up and middle_up and ring_up and pinky_up
-                and index_ext > MIN_EXT and middle_ext > MIN_EXT
-                and ring_ext > MIN_EXT and pinky_ext > MIN_EXT):
+            # Open_Palm: 四指全開
+            if all(fingers_up):
                 return "Open_Palm"
-            
-            # --- Victory: 只有食指+中指伸直, 其他收起 ---
-            if (index_up and middle_up and (not ring_up) and (not pinky_up)
-                and index_ext > MIN_EXT and middle_ext > MIN_EXT):
+                
+            # Victory: 食指(0)和中指(1)伸直，無名指(2)和尾指(3)彎曲
+            if fingers_up[0] and fingers_up[1] and not fingers_up[2] and not fingers_up[3]:
                 return "Victory"
+                
     return "None"
 
 
@@ -460,16 +443,9 @@ async def detect_stream(request: Request, x_api_key: str | None = Header(default
                     # === 🎨 顏色偵測邏輯 ===
                     obj_color = "None"
                     
-                    # A. 紅綠燈
+                    # A. 紅綠燈 暫停顏色偵測，因為 NoIR 鏡頭對紅綠燈的顏色識別不穩定，容易誤判反而干擾決策
                     if cls_name == "traffic light":
-                        h, w = img.shape[:2]
-                        cy1, cy2 = max(0, y1-5), min(h, y2+5)
-                        cx1, cx2 = max(0, x1-5), min(w, x2+5)
-                        crop = img[cy1:cy2, cx1:cx2]
-                        obj_color = get_dominant_color(crop, use_general=False)
-                        
-                        if obj_color != "None":
-                            primary_detected_color = obj_color
+                        continue  # 🌟 直接 skip！當睇唔到紅綠燈，唔計顏色、唔回傳
 
                     # B. 通用物體 (車/人)
                     elif cls_name in ["car", "bus", "truck", "person"]:
@@ -518,8 +494,21 @@ async def detect_stream(request: Request, x_api_key: str | None = Header(default
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
                         if cls_name in ["car", "bus", "truck"]:
-                            if distance < 1.0: current_frame_danger = f"Stop! {cls_name}"
-                            elif distance < 1.5: current_frame_danger = f"Danger: {cls_name}"
+                            # 🌟 新增：計算物件喺畫面嘅位置 (左中右)
+                            img_w = float(img.shape[1])
+                            center_x = (x1 + x2) / 2
+                            if center_x < img_w * 0.33:
+                                position = "on your left"
+                            elif center_x > img_w * 0.67:
+                                position = "on your right"
+                            else:
+                                position = "straight ahead"
+                                
+                            # 🌟 將位置加入危險警告入面
+                            if distance < 1.0: 
+                                current_frame_danger = f"Stop! {cls_name} {position}"
+                            elif distance < 1.5: 
+                                current_frame_danger = f"Danger: {cls_name} {position}"
 
             # 4. 平滑化
             final_color = get_stable_color(primary_detected_color)
@@ -587,11 +576,15 @@ async def analyze_detail(request: Request, x_api_key: str | None = Header(defaul
         try:
             db = get_supabase()
             device_id = request.headers.get("x-device-id", "PI_001")
+
+            # 🌟 計算香港時間 (UTC + 8小時)，並設定格式為 YYYY-MM-DD HH:MM:SS
+            hk_tz = timezone(timedelta(hours=8))
+            formatted_hk_time = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
             db.table("activity_logs").insert({
                 "device_id": device_id,
                 "activity_type": "AI_SCENE_ANALYSIS",
                 "detected_content": description,
-                "time": datetime.now(timezone.utc).isoformat()
+                "time": formatted_hk_time
             }).execute()
             logger.info("💾 成功將 AI 描述備份至 Supabase")
         except Exception as db_err:
@@ -617,7 +610,7 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
         # 🌟 新增：天氣攔截系統 (香港天文台 API - 實時溫度 + 降雨機率)
         question_lower = question.lower()
         live_weather_data = ""
-        weather_keywords = ["weather", "temperature", "rain", "hot", "cold", "天氣", "溫度", "落雨", "雨"]
+        weather_keywords = ["weather", "temperature", "rain", "hot", "cold"]
         
         if any(kw in question_lower for kw in weather_keywords):
             try:
@@ -651,7 +644,7 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
 
         # 2. 呼叫 GPT-4o-mini (修復 Azure Jailbreak 過濾問題)
         def _call_github_ask():
-            ocr_keywords = ["read", "text", "menu", "讀", "字", "餐牌", "文字", "寫咩"]
+            ocr_keywords = ["read", "text", "menu"]
             is_ocr = any(kw in question_lower for kw in ocr_keywords)
 
             from datetime import timedelta
@@ -704,13 +697,23 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
         try:
             db = get_supabase()
             device_id = request.headers.get("x-device-id", "PI_001")
+            
+            # 確保字串唔會超出預期，做個簡單清理
+            log_content = f"Q: {question} | A: {answer}"
+
+            # 🌟 計算香港時間 (UTC + 8小時)，並設定格式為 YYYY-MM-DD HH:MM:SS
+            hk_tz = timezone(timedelta(hours=8))
+            formatted_hk_time = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
+            
             db.table("activity_logs").insert({
                 "device_id": device_id,
                 "activity_type": "AI_Chat",  
-                "detected_content": f"Q: {question} | A: {answer}",
-                "time": datetime.now(timezone.utc).isoformat()
+                "detected_content": log_content,
+                "time": formatted_hk_time
             }).execute()
+            logger.info("💾 成功將對話備份至 Supabase")
         except Exception as db_err:
+            # 🚨 呢句極度重要！佢會將真正死因印喺 Terminal
             logger.error(f"⚠️ Supabase 寫入失敗: {db_err}")
 
         return {"answer": answer}
