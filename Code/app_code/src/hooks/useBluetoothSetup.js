@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BleClient } from '@capacitor-community/bluetooth-le';
+import { BLE_SERVICE_UUID, BLE_CHAR_UUID } from '../constants';
 
-const VG_SERVICE_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8cd';
-const VG_CHAR_UUID = '51ff12cb-fdf0-4222-800f-b91f37d3d224';
 const BT_SCAN_TIMEOUT = 15000; // 15 seconds
 const BT_OPERATION_TIMEOUT = 30000; // 30 seconds
 
@@ -29,7 +28,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       setIsLoading(true);
 
       // Try to get connected devices
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
 
       if (connected && connected.length > 0) {
         // Already connected, get paired Bluetooth devices from Pi
@@ -54,7 +53,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       setBtStep('paired_view');
       setIsLoading(true);
 
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       if (!connected || connected.length === 0) {
         setErrorMessage('BLE connection lost. Please reconnect.');
         setBtStep('not_connected');
@@ -67,16 +66,16 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       // Send GET_PAIRED_BT command
       await BleClient.write(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         Buffer.from('GET_PAIRED_BT').buffer
       );
 
       // Listen for paired devices response
       await BleClient.startNotifications(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         (data) => {
           try {
             const buffer = Buffer.from(data.value);
@@ -117,7 +116,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       setIsLoading(true);
       setAvailableDevices([]);
 
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       if (!connected || connected.length === 0) {
         setErrorMessage('BLE connection lost. Please reconnect.');
         setBtStep('not_connected');
@@ -131,8 +130,8 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       console.log('📡 Sending SCAN_BT command to Pi...');
       await BleClient.write(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         Buffer.from('SCAN_BT').buffer
       );
 
@@ -149,8 +148,8 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       // Listen for available devices response
       await BleClient.startNotifications(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         (data) => {
           try {
             const buffer = Buffer.from(data.value);
@@ -205,7 +204,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       setSelectedMAC(mac);
       setSelectedDeviceName(name);
 
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       if (!connected || connected.length === 0) {
         setErrorMessage('BLE connection lost. Please reconnect.');
         setBtStep('paired_view');
@@ -219,8 +218,8 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       console.log(`📡 Sending PAIR_BT command for ${mac}...`);
       await BleClient.write(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         Buffer.from(`PAIR_BT:${mac}`).buffer
       );
 
@@ -236,8 +235,8 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       let responseReceived = false;
       await BleClient.startNotifications(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         (data) => {
           if (responseReceived) return;
 
@@ -279,7 +278,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       setSelectedMAC(mac);
       setSelectedDeviceName(name);
 
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       if (!connected || connected.length === 0) {
         setErrorMessage('BLE connection lost. Please reconnect.');
         setBtStep('paired_view');
@@ -293,8 +292,8 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       console.log(`📡 Sending CONNECT_BT command for ${mac}...`);
       await BleClient.write(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         Buffer.from(`CONNECT_BT:${mac}`).buffer
       );
 
@@ -310,8 +309,8 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       let responseReceived = false;
       await BleClient.startNotifications(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         (data) => {
           if (responseReceived) return;
 
@@ -350,7 +349,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
     try {
       setIsLoading(true);
 
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       if (!connected || connected.length === 0) {
         setErrorMessage('BLE connection lost. Please reconnect.');
         setIsLoading(false);
@@ -363,8 +362,8 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       console.log(`📡 Sending DISCONNECT_BT command for ${mac}...`);
       await BleClient.write(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         Buffer.from(`DISCONNECT_BT:${mac}`).buffer
       );
 
@@ -382,7 +381,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
     try {
       setIsLoading(true);
 
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       if (!connected || connected.length === 0) {
         setErrorMessage('BLE connection lost. Please reconnect.');
         setIsLoading(false);
@@ -395,8 +394,8 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       console.log(`📡 Sending REMOVE_BT command for ${mac}...`);
       await BleClient.write(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         Buffer.from(`REMOVE_BT:${mac}`).buffer
       );
 
@@ -421,13 +420,13 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
   const handleGoBack = async () => {
     try {
       // Cancel ongoing scans
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       if (connected && connected.length > 0) {
         const deviceId = connected[0].deviceId;
         await BleClient.write(
           deviceId,
-          VG_SERVICE_UUID,
-          VG_CHAR_UUID,
+          BLE_SERVICE_UUID,
+          BLE_CHAR_UUID,
           Buffer.from('CANCEL_BT_SETUP').buffer
         );
       }

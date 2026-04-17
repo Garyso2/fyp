@@ -1,8 +1,10 @@
 import time, subprocess, os, sys
+
+# Allow imports from pi_code root (config.py) when run as a subprocess
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from ultralytics import YOLO
 from gtts import gTTS
-
-# --- Import configuration ---
 from config import RUN_DIR, DEVICE_ID
 
 # Force Python to output immediately, don't buffer prints

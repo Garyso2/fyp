@@ -4,13 +4,15 @@ import os
 import subprocess
 import signal
 import sys
-from gtts import gTTS  # 🌟 Import Google TTS library
 
-# ================= Suppress System Audio Warnings =================
+# Allow imports from pi_code root (config.py, constants.py) when run as a subprocess
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from gtts import gTTS
+
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
-# ================= Import Configuration =================
 from config import SERVER_IP, SERVER_PORT, API_KEY, RUN_DIR, WALK_LOOP_DELAY, SPEECH_COOLDOWN, DANGER_COOLDOWN, DEVICE_ID
 
 # ================= Configuration =================
@@ -25,8 +27,6 @@ HEADERS = {"x-api-key": API_KEY, "Content-Type": "image/jpeg"}
 session = requests.Session()
 session.headers.update(HEADERS)
 
-# --- Set run directory (communicate with voice listener) ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.makedirs(RUN_DIR, exist_ok=True)
 CMD_FILE = os.path.join(RUN_DIR, "voice_cmd.txt")
 
@@ -37,6 +37,8 @@ last_spoken_message = ""
 last_spoken_time = 0
 current_tts_process = None
 last_danger_time = 0
+system_active = True  # False when user says "STOP SYSTEM", True after "START"
+STOP_FLAG = "/tmp/system_stopped.flag"
 
 # Clear any stale speaking lock from previous run
 try:
@@ -123,6 +125,17 @@ def check_server(max_retries=5, interval=2):
     return False
 
 # ================= Receive Commands from Voice Listener =================
+def get_battery_level():
+    """Read battery level from system power supply."""
+    for path in ['/sys/class/power_supply/battery/capacity',
+                 '/sys/class/power_supply/BAT0/capacity']:
+        try:
+            with open(path, 'r') as f:
+                return max(0, min(100, int(f.read().strip())))
+        except Exception:
+            pass
+    return 85  # Default mock value when no UPS attached
+
 def get_voice_command():
     try:
         if os.path.exists(CMD_FILE):
@@ -144,7 +157,7 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 # ================= Main Program (Pure Network Analysis Logic) =================
 def main():    
-    global last_danger_time, last_spoken_message
+    global last_danger_time, last_spoken_message, system_active
     state = "WALKING"
     last_color = "None"
     was_in_danger = False 
@@ -152,6 +165,7 @@ def main():
     resume_walking_time = 0
     walk_gesture_count = 0  
     last_nearest_obj = ""   
+    chat_mode_active = False  # Suppresses walking line when AI chat is active
     
     print(f"🚀 [Online Vision] Started | Server: {SERVER_IP}")
     if not check_server():
@@ -161,19 +175,45 @@ def main():
     speak("Online navigation ready.", force=True)
 
     while running:
+        # ── Always check for STOP / START / BATTERY regardless of state ──
+        voice_cmd = get_voice_command()
+
+        if voice_cmd == "SYSTEM_STOP":
+            system_active = False
+            speak("System stopped. Say start to resume.", force=True)
+            wait_for_speech_to_finish()
+            print("🛑 [Online Vision] System paused.")
+
+        elif voice_cmd == "SYSTEM_START":
+            system_active = True
+            speak("System started.", force=True)
+            wait_for_speech_to_finish()
+            print("▶️  [Online Vision] System resumed.")
+
+        elif voice_cmd == "BATTERY_STATUS":
+            level = get_battery_level()
+            speak(f"Battery is at {level} percent.", force=True)
+            wait_for_speech_to_finish()
+
+        # ── When stopped, skip all sensor/vision logic ────────────────────
+        if not system_active:
+            time.sleep(0.5)
+            continue
+
         if state == "WALKING":
-            # 1. Check for voice commands
-            voice_cmd = get_voice_command()
+            # 1. Check for voice commands (already consumed above; re-read if nothing came in)
+            if voice_cmd is None:
+                voice_cmd = get_voice_command()
             
             # 🌟 Added: Handle AI Q&A commands
             if voice_cmd and voice_cmd.startswith("ASK_AI:"):
                 question = voice_cmd.split("ASK_AI:", 1)[1].strip()
                 # Ignore very short/empty strings — likely mic echo (e.g. "hi", "bye")
                 if len(question.split()) < 2:
-                    print(f"⚠️ [Online Vision - Q&A Mode] Ignoring too-short input: '{question}'")
                     resume_walking_time = time.time()
                     continue
-                print(f"❓ [Online Vision - Q&A Mode] Question: {question}")
+                print()
+                print(f"❓ [Q&A] {question}")
                 
                 img_bytes = capture_jpeg_memory(1920, 1080, 85)
                 if img_bytes:
@@ -199,19 +239,24 @@ def main():
                 resume_walking_time = time.time()
                 continue
 
-            # 🌟 Chat Room Open - greet the user
+            # Chat Room Open - greet the user
             if voice_cmd == "CHAT_ROOM_OPEN":
-                print(f"💬 [Online Vision] Chat Room opened")
+                chat_mode_active = True
+                print()
+                print("─" * 45)
+                print("[Chat Mode] Activated — Walking output paused")
                 speak("Hi.", force=True)
                 wait_for_speech_to_finish()
                 resume_walking_time = time.time()
                 continue
 
-            # 🌟 Chat Room Exit - gracefully exit and resume walking
+            # Chat Room Exit - gracefully exit and resume walking
             if voice_cmd == "CHAT_ROOM_EXIT":
-                print(f"💬 [Online Vision] Chat Room ended by user")
+                chat_mode_active = False
                 speak("Bye.", force=True)
                 wait_for_speech_to_finish()
+                print("[Chat Mode] Exited — resuming Walking Mode")
+                print("─" * 45)
                 resume_walking_time = time.time()
                 continue
 
@@ -243,7 +288,9 @@ def main():
                 nearest_obj = data.get("nearest_object", "")
                 if nearest_obj: last_nearest_obj = nearest_obj
                 
-                print(f"🚶 [Online Vision - Walking] Obstacle: {obstacle} | Color: {color} | Gesture: {gesture} | Nearest: {nearest_obj}")
+                if not chat_mode_active:
+                    ts = time.strftime("%H:%M:%S")
+                    print(f"\r[Walking Mode] {ts} | {obstacle} | {color}", end="", flush=True)
 
                 # Handle gesture
                 if switch or gesture == "Open_Palm":
@@ -278,7 +325,8 @@ def main():
                 time.sleep(0.5)
 
             sleep_time = WALK_LOOP_DELAY - (time.time() - start_time)
-            if sleep_time > 0: time.sleep(sleep_time)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
         elif state == "FINDING_PREP":
             speak("Hold still.", force=True)
@@ -293,10 +341,17 @@ def main():
                     resp = session.post(URL_DETAIL, data=img_bytes, timeout=20)
                     if resp.status_code == 200:
                         desc = resp.json().get("description", "No result")
-                        speak(desc, force=True); wait_for_speech_to_finish() 
-                    else: speak("Server error.", force=True); wait_for_speech_to_finish()
-                except: speak("Network error.", force=True); wait_for_speech_to_finish()
-            else: speak("Camera error.", force=True); wait_for_speech_to_finish()
+                        speak(desc, force=True)
+                        wait_for_speech_to_finish()
+                    else:
+                        speak("Server error.", force=True)
+                        wait_for_speech_to_finish()
+                except Exception:
+                    speak("Network error.", force=True)
+                    wait_for_speech_to_finish()
+            else:
+                speak("Camera error.", force=True)
+                wait_for_speech_to_finish()
             
             speak("Say photo to take again, or say exit to resume walking.", force=True)
             state = "WAIT_FOR_EXIT"
@@ -308,28 +363,49 @@ def main():
         elif state == "WAIT_FOR_EXIT":
             voice_cmd = get_voice_command()
             if voice_cmd == "PHOTO_ONCE":
-                speak("One more time.", force=True); state = "FINDING_PREP"; time.sleep(2); continue
+                speak("One more time.", force=True)
+                state = "FINDING_PREP"
+                time.sleep(2)
+                continue
             elif voice_cmd == "EXIT_PHOTO":
-                speak("Walking mode.", force=True); state = "WALKING"; resume_walking_time = time.time(); time.sleep(2); continue
+                speak("Walking mode.", force=True)
+                state = "WALKING"
+                resume_walking_time = time.time()
+                time.sleep(2)
+                continue
 
             img_bytes = capture_jpeg_memory(416, 320, 50)
-            if not img_bytes: continue
+            if not img_bytes:
+                continue
 
             try:
                 resp = session.post(URL_STREAM, data=img_bytes, timeout=6)
                 if resp.status_code == 200:
                     gesture = resp.json().get("gesture", "None")
                     if gesture in ["Open_Palm", "Victory"]:
-                        if gesture == last_seen_gesture: gesture_hold_count += 1
-                        else: gesture_hold_count = 1; last_seen_gesture = gesture
-                    else: gesture_hold_count = 0; last_seen_gesture = "None"
+                        if gesture == last_seen_gesture:
+                            gesture_hold_count += 1
+                        else:
+                            gesture_hold_count = 1
+                            last_seen_gesture = gesture
+                    else:
+                        gesture_hold_count = 0
+                        last_seen_gesture = "None"
 
                     if gesture_hold_count >= 3:
                         if gesture == "Open_Palm" and (time.time() - wait_mode_start_time > 2.0):
-                            speak("Walking mode.", force=True); state = "WALKING"; resume_walking_time = time.time(); gesture_hold_count = 0; time.sleep(2) 
+                            speak("Walking mode.", force=True)
+                            state = "WALKING"
+                            resume_walking_time = time.time()
+                            gesture_hold_count = 0
+                            time.sleep(2)
                         elif gesture == "Victory" and (time.time() - wait_mode_start_time > 2.0):
-                            speak("One more time.", force=True); state = "FINDING_PREP"; gesture_hold_count = 0; time.sleep(2)
-            except: pass
+                            speak("One more time.", force=True)
+                            state = "FINDING_PREP"
+                            gesture_hold_count = 0
+                            time.sleep(2)
+            except Exception:
+                pass
             time.sleep(0.3)
 
 if __name__ == "__main__":

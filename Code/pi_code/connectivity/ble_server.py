@@ -1,10 +1,16 @@
-# ================== 🔵 BLE Server - VisualGuard Pi ==================
+# ================== BLE Server - VisualGuard Pi ==================
 
 import asyncio
 import json
+import os
+import sys
 import threading
 import time
 from typing import Optional
+
+# Allow imports from pi_code root (config.py, constants.py) when run as a subprocess
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from bless import (
     BlessServer,
     GATTCharacteristicProperties,
@@ -13,7 +19,7 @@ from bless import (
 from constants import SERVICE_UUID, CHAR_UUID, TIMEOUT_LIMIT
 from bluetooth_manager import BluetoothManager
 from wifi_manager import WiFiManager
-from config import DEVICE_ID, DEVICE_NAME  # 🔴 Import device config
+from config import DEVICE_ID, DEVICE_NAME
 
 
 class VisualGuardServer:

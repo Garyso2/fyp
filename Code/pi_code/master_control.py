@@ -5,11 +5,11 @@ from config import SERVER_IP, SERVER_PORT, RUN_DIR, DEVICE_ID, BASE_DIR
 
 # --- Import Supabase client for battery reporting ---
 try:
-    from supabase_client import supabase
+    from services.supabase_client import supabase
     HAS_SUPABASE = True
 except ImportError:
     HAS_SUPABASE = False
-    print("⚠️ Warning: Supabase client not found")
+    print("Warning: Supabase client not found")
 
 # --- Set log file ---
 LOG_FILE = f"{RUN_DIR}/system_activity.log"
@@ -31,74 +31,53 @@ def is_online():
     try:
         socket.create_connection((SERVER_IP, SERVER_PORT), timeout=2)
         return True
-    except: return False
+    except OSError:
+        return False
 
 def notify_mode_change(new_mode):
-    """
-    Send system notification when mode changes
-    Uses both visual log and audio alert
-    """
+    if new_mode == "ONLINE":
+        print("\n--- SWITCHED TO ONLINE MODE ---\n")
+    else:
+        print("\n--- SWITCHED TO OFFLINE MODE ---\n")
     try:
-        # Log to console and file
         if new_mode == "ONLINE":
-            print("\n🌐🌐🌐 SWITCHED TO ONLINE MODE 🌐🌐🌐\n")
-        else:
-            print("\n🔴🔴🔴 SWITCHED TO OFFLINE MODE 🔴🔴🔴\n")
-        
-        # Audio alert using speaker
-        # Play a simple beep to notify user
-        if new_mode == "ONLINE":
-            # Double beep for ONLINE
             subprocess.run(["beep", "-f", "1000", "-l", "200"], stderr=subprocess.DEVNULL, timeout=1)
             time.sleep(0.2)
             subprocess.run(["beep", "-f", "1000", "-l", "200"], stderr=subprocess.DEVNULL, timeout=1)
         else:
-            # Single low beep for OFFLINE
             subprocess.run(["beep", "-f", "500", "-l", "300"], stderr=subprocess.DEVNULL, timeout=1)
-    except:
-        # If beep command not available, use espeak instead
+    except Exception:
         try:
             text = "Online mode" if new_mode == "ONLINE" else "Offline mode"
-            subprocess.run(["espeak", "-v", "en-us", "-s", "150", text], 
-                         stderr=subprocess.DEVNULL, timeout=2)
-        except:
-            pass  # Silent fail if both beep and espeak unavailable
+            subprocess.run(["espeak", "-v", "en-us", "-s", "150", text],
+                           stderr=subprocess.DEVNULL, timeout=2)
+        except Exception:
+            pass
 
 def get_battery_level():
-    """
-    Get device battery level
-    Returns battery percentage (0-100)
-    For Raspberry Pi: reads from /sys/class/power_supply/ if available
-    For testing without battery: returns fixed value
-    """
-    try:
-        # Try to read from system power supply (if UPS is connected)
-        with open('/sys/class/power_supply/battery/capacity', 'r') as f:
-            level = int(f.read().strip())
-            return max(0, min(100, level))  # Clamp between 0-100
-    except:
+    for path in [
+        '/sys/class/power_supply/battery/capacity',
+        '/sys/class/power_supply/BAT0/capacity',
+    ]:
         try:
-            # Try alternative path
-            with open('/sys/class/power_supply/BAT0/capacity', 'r') as f:
-                level = int(f.read().strip())
-                return max(0, min(100, level))
-        except:
-            # Mock battery level for testing (normally would be 85% on Pi 5)
-            return 85
+            with open(path, 'r') as f:
+                return max(0, min(100, int(f.read().strip())))
+        except OSError:
+            continue
+    return 85  # Mock value when no UPS attached
 
 def main():
     logger = setup_logger()
     logger.info("🚀 Master Control Booting Up...")
 
     if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
-        logger.info("📡 First boot detected! Starting BLE setup...")
-        subprocess.run([sys.executable, f"{BASE_DIR}/ble_server.py"])
-        logger.info("✅ WiFi Setup Completed.")
+        logger.info("First boot detected. Starting BLE setup...")
+        subprocess.run([sys.executable, f"{BASE_DIR}/connectivity/ble_server.py"])
+        logger.info("WiFi setup completed.")
 
-    # ⚠️ Run hardware and voice listener as independent background processes (microservices architecture)
-    logger.info("🛡️ Starting Independent Hardware & Voice Listener...")
-    hw_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/safety_hardware.py"])
-    voice_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/voice_listener.py"])
+    logger.info("Starting hardware monitor and voice listener...")
+    hw_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/hardware/safety_hardware.py"])
+    voice_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/services/voice_listener.py"])
 
     current_mode = None
     vision_proc = None
@@ -113,41 +92,44 @@ def main():
             loop_count += 1
 
             if online and current_mode != "ONLINE":
-                if vision_proc: vision_proc.terminate(); vision_proc.wait()
-                # Start online vision focused on AI processing
-                vision_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/online_vision.py"])
+                if vision_proc:
+                    vision_proc.terminate()
+                    vision_proc.wait()
+                vision_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/vision/online_vision.py"])
                 current_mode = "ONLINE"
-                logger.info("🌐 Switched to ONLINE Vision")
+                logger.info("Switched to ONLINE vision")
                 notify_mode_change("ONLINE")
 
             elif not online and current_mode != "OFFLINE":
-                if vision_proc: vision_proc.terminate(); vision_proc.wait()
-                vision_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/offline_vision.py"])
+                if vision_proc:
+                    vision_proc.terminate()
+                    vision_proc.wait()
+                vision_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/vision/offline_vision.py"])
                 current_mode = "OFFLINE"
-                logger.info("🔴 Switched to OFFLINE Vision")
+                logger.info("Switched to OFFLINE vision")
                 notify_mode_change("OFFLINE")
 
-            # Display status every 10 loops (every ~50 seconds)
+            # Print status summary every 10 loops (~50 seconds)
             if loop_count % 10 == 0:
-                status_icon = "🟢 ONLINE" if online else "🔴 OFFLINE"
-                logger.info(f"{status_icon} | Current Mode: {current_mode} | Processes: hw={hw_proc.poll() is None}, voice={voice_proc.poll() is None}, vision={vision_proc.poll() if vision_proc else 'None'}")
+                status = "ONLINE" if online else "OFFLINE"
+                logger.info(f"[{status}] hw={hw_proc.poll() is None} voice={voice_proc.poll() is None} vision={vision_proc.poll() if vision_proc else 'N/A'}")
 
 
-            # Report battery level if WiFi is available
+            # Report battery level when online
             if online and HAS_SUPABASE and (current_time - last_battery_report_time >= BATTERY_REPORT_INTERVAL):
                 battery_level = get_battery_level()
                 if supabase.update_device_status(battery_level=battery_level, is_online=True):
-                    logger.info(f"📊 Battery reported to Supabase: {battery_level}%")
+                    logger.info(f"Battery reported: {battery_level}%")
                     last_battery_report_time = current_time
 
-            # Watchdog: ensure the three processes are alive, restart if dead
+            # Watchdog: restart child processes if they die unexpectedly
             if hw_proc.poll() is not None:
                 logger.warning("Restarting safety_hardware...")
-                hw_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/safety_hardware.py"])
-            
+                hw_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/hardware/safety_hardware.py"])
+
             if voice_proc.poll() is not None:
                 logger.warning("Restarting voice_listener...")
-                voice_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/voice_listener.py"])
+                voice_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/services/voice_listener.py"])
 
             time.sleep(5)
             

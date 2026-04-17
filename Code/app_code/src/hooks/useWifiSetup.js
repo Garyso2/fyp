@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BleClient } from '@capacitor-community/bluetooth-le';
-
-const VG_SERVICE_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8cd';
-const VG_CHAR_UUID = '51ff12cb-fdf0-4222-800f-b91f37d3d224';
+import { BLE_SERVICE_UUID, BLE_CHAR_UUID } from '../constants';
 
 export const useWifiSetup = (t, deviceId, goBack) => {
   // --- State Management ---
@@ -33,7 +31,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       if (activeListenerId) {
         console.log('🧹 [WiFi Setup] Stopping BLE notifications for device:', activeListenerId);
         try {
-          await BleClient.stopNotifications(activeListenerId, VG_SERVICE_UUID, VG_CHAR_UUID);
+          await BleClient.stopNotifications(activeListenerId, BLE_SERVICE_UUID, BLE_CHAR_UUID);
           console.log('✅ [WiFi Setup] All notifications stopped');
         } catch (e) {
           console.log('ℹ️ [WiFi Setup] Listener stop (non-critical):', e.message);
@@ -50,7 +48,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       console.log('🛑 [WiFi Setup] Stopping previous listener for device:', activeListenerId);
       try {
         // Force stop notifications
-        await BleClient.stopNotifications(activeListenerId, VG_SERVICE_UUID, VG_CHAR_UUID);
+        await BleClient.stopNotifications(activeListenerId, BLE_SERVICE_UUID, BLE_CHAR_UUID);
         console.log('✅ [WiFi Setup] Listener stopped successfully');
       } catch (e) {
         console.log('⚠️ [WiFi Setup] Listener stop error (continuing anyway):', e.message);
@@ -65,7 +63,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       console.log('🔍 [WiFi Setup] Checking BLE connection...');
       
       // Try to get connected devices
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       
       if (connected && connected.length > 0) {
         // Already connected, move to WiFi scanning
@@ -96,7 +94,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       console.log('📡 [WiFi Setup] Starting WiFi scan...');
       
       // Get connected devices
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       
       if (!connected || connected.length === 0) {
         throw new Error('Device disconnected');
@@ -109,8 +107,8 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       
       await BleClient.startNotifications(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         (value) => {
           try {
             if (!value || !value.buffer) return;
@@ -155,7 +153,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       const scanCommand = 'SCAN_WIFI';
       const data = new TextEncoder().encode(scanCommand);
       
-      await BleClient.write(deviceId, VG_SERVICE_UUID, VG_CHAR_UUID, data);
+      await BleClient.write(deviceId, BLE_SERVICE_UUID, BLE_CHAR_UUID, data);
       console.log('📡 [WiFi Setup] WiFi scan command sent');
       
       setWifiStep('scanning');
@@ -188,7 +186,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second for listener to stop
 
       // Get connected device
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       
       if (!connected || connected.length === 0) {
         throw new Error('Device disconnected');
@@ -203,8 +201,8 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       
       await BleClient.startNotifications(
         deviceId,
-        VG_SERVICE_UUID,
-        VG_CHAR_UUID,
+        BLE_SERVICE_UUID,
+        BLE_CHAR_UUID,
         (value) => {
           try {
             if (!value || !value.buffer) return;
@@ -271,7 +269,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
       });
       
       const data = new TextEncoder().encode(wifiConfig);
-      await BleClient.write(deviceId, VG_SERVICE_UUID, VG_CHAR_UUID, data);
+      await BleClient.write(deviceId, BLE_SERVICE_UUID, BLE_CHAR_UUID, data);
       console.log('📡 [WiFi Setup] WiFi credentials sent to device');
       
       // Set timeout for response (increased to 45 seconds to wait for retries)
@@ -306,7 +304,7 @@ export const useWifiSetup = (t, deviceId, goBack) => {
     console.log('🔙 [WiFi Setup] Going back...');
     try {
       await cleanupListeners();
-      const connected = await BleClient.getConnectedDevices([VG_SERVICE_UUID]);
+      const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
       if (connected && connected.length > 0) {
         try {
           await BleClient.disconnect(connected[0].deviceId);

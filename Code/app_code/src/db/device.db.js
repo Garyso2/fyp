@@ -107,15 +107,15 @@ export const DeviceDB = {
   },
 
   /**
-   * 刪除設備
-   * @param {string} deviceId - 設備 ID
+   * Delete a device and its status record
+   * @param {string} deviceId - Device ID
    * @returns {Promise<void>}
    */
   delete: async (deviceId) => {
-    // 先刪除 device_status
+    // Delete device_status first (foreign key dependency)
     await DeviceDB.deleteStatus(deviceId);
 
-    // 再刪除 device
+    // Then delete the device record
     const { error } = await supabase
       .from('device')
       .delete()
@@ -124,12 +124,12 @@ export const DeviceDB = {
     if (error) throw error;
   },
 
-  // ============ device_status 相關 ============
+  // ============ device_status operations ============
 
   /**
-   * 建立設備狀態記錄
-   * @param {Object} statusData - 狀態資料 { device_id, battery_level, is_online }
-   * @returns {Promise<Object>} 新建的狀態對象
+   * Create an initial device_status record for a new device
+   * @param {Object} statusData - { device_id, battery_level, is_online }
+   * @returns {Promise<Object>} Newly created status object
    */
   createStatus: async (statusData) => {
     const { device_id, battery_level = 0, is_online = false } = statusData;
@@ -150,9 +150,9 @@ export const DeviceDB = {
   },
 
   /**
-   * 查詢設備的當前狀態
-   * @param {string} deviceId - 設備 ID
-   * @returns {Promise<Object>} 狀態對象 { battery_level, is_online, last_updated }
+   * Get the current status of a device
+   * @param {string} deviceId - Device ID
+   * @returns {Promise<Object>} Status object { battery_level, is_online, last_updated }
    */
   getStatus: async (deviceId) => {
     const { data, error } = await supabase
@@ -166,9 +166,9 @@ export const DeviceDB = {
   },
 
   /**
-   * 更新設備狀態（電量、在線狀態）
-   * @param {string} deviceId - 設備 ID
-   * @param {Object} statusUpdate - 狀態更新 { battery_level, is_online }
+   * Update device status (battery level and online state)
+   * @param {string} deviceId - Device ID
+   * @param {Object} statusUpdate - { battery_level, is_online }
    * @returns {Promise<void>}
    */
   updateStatus: async (deviceId, statusUpdate) => {
@@ -187,8 +187,8 @@ export const DeviceDB = {
   },
 
   /**
-   * 刪除設備狀態
-   * @param {string} deviceId - 設備 ID
+   * Delete the device_status record for a device
+   * @param {string} deviceId - Device ID
    * @returns {Promise<void>}
    */
   deleteStatus: async (deviceId) => {

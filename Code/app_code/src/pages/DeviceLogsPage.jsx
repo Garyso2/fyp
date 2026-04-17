@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { i18n } from '../i18n';
-import { DeviceService } from '../functions/device.functions';
-import { ActivityLogService } from '../functions/activityLog.functions';
+import { DeviceService } from '../services/device.service';
+import { ActivityLogService } from '../services/activityLog.service';
+import { ACTIVITY_TYPES } from '../constants';
 
 export const DeviceLogsPage = ({ user, device, onBack, onSetupWifi, onSetupBluetooth, lang }) => {
   const [logs, setLogs] = useState([]);
@@ -156,10 +157,10 @@ export const DeviceLogsPage = ({ user, device, onBack, onSetupWifi, onSetupBluet
                 onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
               >
                 <option value="">All Types</option>
-                <option value="AI_CHAT">AI_CHAT</option>
-                <option value="IMAGE_CAPTURE">IMAGE_CAPTURE</option>
-                <option value="OBSTACLE_WARNING">OBSTACLE_WARNING</option>
-                <option value="FALL_DETECTION">FALL_DETECTION</option>
+                <option value={ACTIVITY_TYPES.AI_SCENE_ANALYSIS}>{ACTIVITY_TYPES.AI_SCENE_ANALYSIS}</option>
+                <option value={ACTIVITY_TYPES.AI_CHAT}>{ACTIVITY_TYPES.AI_CHAT}</option>
+                <option value={ACTIVITY_TYPES.OBSTACLE_WARNING}>{ACTIVITY_TYPES.OBSTACLE_WARNING}</option>
+                <option value={ACTIVITY_TYPES.FALL_DETECTION}>{ACTIVITY_TYPES.FALL_DETECTION}</option>
               </select>
             </div>
             <div className="col-md-6">

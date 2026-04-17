@@ -2,9 +2,12 @@ import vosk
 import pyaudio
 import json as _json
 import os
+import sys
 import time
 
-# --- Import configuration ---
+# Allow imports from pi_code root (config.py) when run as a subprocess
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from config import RUN_DIR, DEVICE_ID
 
 # --- Set command file ---
@@ -93,6 +96,7 @@ except Exception as e:
 print("🎤 [Voice Listener] Listening for commands...")
 chat_room_active = False  # 🌟 Chat Room mode indicator
 SPEAKING_LOCK = "/tmp/speaking.lock"
+STOP_FLAG = "/tmp/system_stopped.flag"  # Written when system is stopped; deleted on start
 POST_SPEECH_COOLDOWN = 1.5  # Seconds to ignore mic after device stops speaking
 
 # Clear any stale lock file left over from a previous crash
@@ -146,6 +150,32 @@ while True:
                 """Catch all common Vosk mishearings of the wake word."""
                 triggers = ["hi ai", "hey ai", "hi all", "hey all", "high i", "hi i"]
                 return any(tr in t for tr in triggers)
+
+            # ── STOP SYSTEM command (works even in chat room mode) ──────────
+            if any(p in text for p in ["stop system", "stop the system", "system stop"]):
+                chat_room_active = False
+                with open(CMD_FILE, "w") as f: f.write("SYSTEM_STOP")
+                # Write stop flag so safety_hardware also knows to pause
+                with open(STOP_FLAG, "w") as f: f.write("1")
+                print("🛑 [Voice] STOP SYSTEM command sent")
+                continue
+
+            # ── START command to resume ──────────────────────────────────────
+            if any(p in text for p in ["start system", "start the system", "system start", "start"]):
+                with open(CMD_FILE, "w") as f: f.write("SYSTEM_START")
+                # Remove stop flag so sensors resume
+                try:
+                    if os.path.exists(STOP_FLAG):
+                        os.remove(STOP_FLAG)
+                except: pass
+                print("▶️  [Voice] START SYSTEM command sent")
+                continue
+
+            # ── Battery query ────────────────────────────────────────────────
+            if any(p in text for p in ["battery", "battery life", "battery level", "battery status"]):
+                with open(CMD_FILE, "w") as f: f.write("BATTERY_STATUS")
+                print("🔋 [Voice] Battery query sent")
+                continue
 
             # 🌟 Chat Room Mode: All sentences become AI questions
             if is_wake_word(text):

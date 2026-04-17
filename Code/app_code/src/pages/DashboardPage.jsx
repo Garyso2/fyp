@@ -3,8 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import 'bootstrap-icons/font/bootstrap-icons.css';
 import { i18n } from '../i18n';
-import { DeviceService } from '../functions/device.functions';
-import { UserService } from '../functions/user.functions';
+import { DeviceService } from '../services/device.service';
+import { UserService } from '../services/user.service';
 
 export const DashboardPage = ({ user, onLogout, onSelectDevice, lang, setLang, textSize, setTextSize }) => {
   const [devices, setDevices] = useState([]);

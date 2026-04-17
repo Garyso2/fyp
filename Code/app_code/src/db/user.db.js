@@ -123,9 +123,9 @@ export const UserDB = {
   },
 
   /**
-   * 更新用戶資料（通用）
-   * @param {string} userId - 用戶 ID
-   * @param {Object} updates - 要更新的欄位
+   * Update user fields (generic)
+   * @param {string} userId - User ID
+   * @param {Object} updates - Fields to update
    * @returns {Promise<void>}
    */
   update: async (userId, updates) => {
@@ -138,8 +138,8 @@ export const UserDB = {
   },
 
   /**
-   * 刪除用戶賬戶
-   * @param {string} userId - 用戶 ID
+   * Delete a user account
+   * @param {string} userId - User ID
    * @returns {Promise<void>}
    */
   delete: async (userId) => {

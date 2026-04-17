@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { i18n } from '../i18n';
-import { UserService } from '../functions/user.functions';
+import { UserService } from '../services/user.service';
 
 export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => {
   const [tempLang, setTempLang] = useState(lang);

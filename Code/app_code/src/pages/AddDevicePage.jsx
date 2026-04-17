@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import { i18n } from '../i18n';
-import { DeviceService } from '../functions/device.functions';
-import { useBleSetup } from '../code/AddDevice/useBleSetup';
+import { DeviceService } from '../services/device.service';
+import { useBleSetup } from '../hooks/useBleSetup';
 
 export const AddDevicePage = ({ user, goBack, lang }) => {
   const t = i18n[lang] || i18n.en;

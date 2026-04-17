@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { i18n } from '../i18n';
-import { useWifiSetup } from '../code/WifiSetup/useWifiSetup';
+import { useWifiSetup } from '../hooks/useWifiSetup';
 
 export const WifiSetupPage = ({ device, user, lang, goBack }) => {
   const t = i18n[lang] || i18n.en;

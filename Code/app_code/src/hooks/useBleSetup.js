@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { BleClient } from '@capacitor-community/bluetooth-le';
-
-const VG_SERVICE_UUID = 'a07498ca-ad5b-474e-940d-16f1fbe7e8cd';
-const VG_CHAR_UUID = '51ff12cb-fdf0-4222-800f-b91f37d3d224';
+import { BLE_SERVICE_UUID, BLE_CHAR_UUID } from '../constants';
 
 export const useBleSetup = (t, goBack) => {
   // --- 狀態管理 ---
@@ -17,8 +15,8 @@ export const useBleSetup = (t, goBack) => {
   const bufferRef = useRef('');       // accumulates fragmented BLE packets
   const modeRef = useRef('wifi_scan'); // 'wifi_scan' | 'wifi_connect' — controls how notifications are routed
   const connIdRef = useRef(null);     // mirrors connectedDeviceId for use inside callbacks
-  const serviceUuidRef = useRef(VG_SERVICE_UUID);
-  const charUuidRef = useRef(VG_CHAR_UUID);
+  const serviceUuidRef = useRef(BLE_SERVICE_UUID);
+  const charUuidRef = useRef(BLE_CHAR_UUID);
 
   // --- 生命週期：離開頁面自動清理 ---
   useEffect(() => {
@@ -28,7 +26,7 @@ export const useBleSetup = (t, goBack) => {
       }
       if (connectedDeviceId) {
          const data = new TextEncoder().encode("CANCEL_SETUP");
-         BleClient.write(connectedDeviceId, VG_SERVICE_UUID, VG_CHAR_UUID, data)
+         BleClient.write(connectedDeviceId, BLE_SERVICE_UUID, BLE_CHAR_UUID, data)
            .catch(() => {})
            .finally(() => BleClient.disconnect(connectedDeviceId).catch(() => {}));
       }
@@ -45,7 +43,7 @@ export const useBleSetup = (t, goBack) => {
       await BleClient.initialize();
       console.log('✅ BLE 已初始化');
       
-      await BleClient.requestLEScan({ services: [VG_SERVICE_UUID] }, (result) => {
+      await BleClient.requestLEScan({ services: [BLE_SERVICE_UUID] }, (result) => {
         console.log('📱 找到設備:', result.device.name, result.device.deviceId);
         setFoundDevices((prev) => 
           prev.find(dev => dev.deviceId === result.device.deviceId) ? prev : [...prev, result.device]
@@ -98,8 +96,8 @@ export const useBleSetup = (t, goBack) => {
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       // Discover services and pick the best characteristic
-      let serviceUuid = VG_SERVICE_UUID;
-      let charUuid = VG_CHAR_UUID;
+      let serviceUuid = BLE_SERVICE_UUID;
+      let charUuid = BLE_CHAR_UUID;
       try {
         const services = await BleClient.getServices(device.deviceId);
         console.log('📋 發現的服務:', services.length);

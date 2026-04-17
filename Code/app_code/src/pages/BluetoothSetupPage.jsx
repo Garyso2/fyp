@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { i18n } from '../i18n';
-import { useBluetoothSetup } from '../code/BluetoothSetup/useBluetoothSetup';
+import { useBluetoothSetup } from '../hooks/useBluetoothSetup';
 
 export const BluetoothSetupPage = ({ device, user, lang, goBack }) => {
   const t = i18n[lang] || i18n.en;

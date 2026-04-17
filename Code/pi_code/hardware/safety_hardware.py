@@ -8,15 +8,17 @@ import time
 import math
 import subprocess
 import sys
-from gpiozero import DistanceSensor
-from mpu6050 import mpu6050
 import os
 
-# Import configuration and Supabase client
+# Allow imports from pi_code root (config.py, services/) when run as a subprocess
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from gpiozero import DistanceSensor
+from mpu6050 import mpu6050
 from config import DEVICE_ID, ULTRASONIC_DANGER_DISTANCE, ULTRASONIC_CHECK_INTERVAL, GYRO_DANGER_THRESHOLD, GYRO_CHECK_INTERVAL, ACTIVITY_LOG_COOLDOWN
 
 try:
-    from supabase_client import supabase
+    from services.supabase_client import supabase
     HAS_SUPABASE = True
 except ImportError:
     HAS_SUPABASE = False
@@ -46,6 +48,24 @@ except Exception as e:
 # =============== Global State ===============
 last_danger_time = {}  # {'ultrasonic': timestamp, 'gyroscope': timestamp}
 loop_count = 0  # Counter for displaying heartbeat
+ultrasonic_consec = 0   # Consecutive close-object detection count
+ultrasonic_was_clear = True  # Track whether object was absent last cycle
+STOP_FLAG = "/tmp/system_stopped.flag"  # Written by voice_listener when stopped
+
+def beep():
+    """Play a single short warning tone ("wong")"""
+    try:
+        # Use speaker-test for a pure tone beep (non-blocking)
+        subprocess.Popen(
+            ["speaker-test", "-t", "sine", "-f", "1000", "-l", "1"],
+            stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+        )
+    except Exception:
+        try:
+            # Fallback: use beep command
+            subprocess.Popen(["beep", "-f", "1000", "-l", "300"], stderr=subprocess.DEVNULL)
+        except Exception:
+            pass  # Silent fail if neither available
 
 def speak(text):
     """Emergency voice alert (priority TTS to interrupt AI voice)"""
@@ -105,6 +125,8 @@ def report_danger(activity_type: str, content: str):
 
 def check_ultrasonic():
     """Check ultrasonic sensor to detect objects too close"""
+    global ultrasonic_consec, ultrasonic_was_clear
+
     if ultrasonic is None:
         return
     
@@ -113,13 +135,31 @@ def check_ultrasonic():
         distance_cm = distance * 100  # Convert to centimeters
         
         if distance < ULTRASONIC_DANGER_DISTANCE:
-            # Danger: object too close
-            if can_report_danger('ultrasonic'):
-                # Only speak when reporting (applies cooldown to both speech and logging)
-                speak(f"Warning! Object detected at {distance_cm:.1f} centimeters!")
-                content = f"Object detected in front at distance {distance_cm:.1f} cm"
-                report_danger('ultrasonic', content)
-                print(f"⚠️  [Danger] Ultrasonic: {content}")
+            # Object is close
+            if ultrasonic_was_clear:
+                # Object just appeared — reset consecutive counter
+                ultrasonic_consec = 0
+                ultrasonic_was_clear = False
+
+            if ultrasonic_consec < 3:
+                # Play beep warning ("wong") — max 3 times in a row
+                beep()
+                ultrasonic_consec += 1
+                print(f"⚠️  [Ultrasonic] Warning beep #{ultrasonic_consec} — {distance_cm:.1f} cm")
+
+                # Only report to Supabase once when reaching 3 consecutive detections
+                if ultrasonic_consec == 3:
+                    speak(f"Warning! Object detected at {distance_cm:.1f} centimeters!")
+                    content = f"Obstacle detected at {distance_cm:.1f} cm"
+                    report_danger('OBSTACLE_WARNING', content)
+            else:
+                print(f"ℹ️  [Ultrasonic] Max warnings reached, silent — {distance_cm:.1f} cm")
+        else:
+            # Object cleared — reset state so next approach triggers beeps again
+            if not ultrasonic_was_clear:
+                print("✅ [Ultrasonic] Object cleared, counter reset")
+            ultrasonic_consec = 0
+            ultrasonic_was_clear = True
     
     except Exception as e:
         print(f"❌ Ultrasonic reading failed: {e}")
@@ -145,7 +185,7 @@ def check_gyroscope():
                 # Only speak when reporting (applies cooldown to both speech and logging)
                 speak("Alert! Device is shaking violently! Possible fall detected!")
                 content = f"Fall detection - Excessive shaking detected (angular velocity: {total_gyro:.1f}°/s)"
-                report_danger('gyroscope', content)
+                report_danger('FALL_DETECTION', content)
                 print(f"⚠️  [Danger] Gyroscope: {content}")
     
     except Exception as e:
@@ -166,6 +206,11 @@ def main():
             # Print heartbeat every 50 loops
             if loop_count % 50 == 0:
                 print(f"💓 [Heartbeat] Monitoring running... (loop {loop_count})")
+
+            # ── STOP MODE: pause all sensor checks ───────────────────────
+            if os.path.exists(STOP_FLAG):
+                time.sleep(0.5)
+                continue
             
             # Check ultrasonic sensor
             check_ultrasonic()

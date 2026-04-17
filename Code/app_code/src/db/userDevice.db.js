@@ -46,9 +46,9 @@ export const UserDeviceDB = {
   },
 
   /**
-   * 查詢用戶的所有設備（帶設備詳情和狀態）
-   * @param {string} userId - 用戶 ID
-   * @returns {Promise<Array>} 設備列表陣列
+   * Query all devices linked to a user, with device details and status
+   * @param {string} userId - User ID
+   * @returns {Promise<Array>} Array of device objects
    */
   findDevicesByUser: async (userId) => {
     const { data, error } = await supabase
@@ -69,10 +69,10 @@ export const UserDeviceDB = {
 
     if (error) throw error;
 
-    // 格式化資料
+    // Flatten nested device data into a flat object
     return data.map(item => ({
       device_id: item.device_id,
-      device_name: item.device?.device_name || '未知設備',
+      device_name: item.device?.device_name || 'Unknown Device',
       language_setting: item.device?.language_setting || 'en',
       is_online: item.device?.device_status?.[0]?.is_online ?? false,
       battery_level: item.device?.device_status?.[0]?.battery_level ?? '--',
@@ -104,10 +104,10 @@ export const UserDeviceDB = {
   },
 
   /**
-   * 檢查用戶是否擁有該設備
-   * @param {string} userId - 用戶 ID
-   * @param {string} deviceId - 設備 ID
-   * @returns {Promise<boolean>} true 代表擁有
+   * Check whether a user owns a specific device
+   * @param {string} userId - User ID
+   * @param {string} deviceId - Device ID
+   * @returns {Promise<boolean>} true if the user owns the device
    */
   hasDevice: async (userId, deviceId) => {
     const { data } = await supabase
@@ -121,9 +121,9 @@ export const UserDeviceDB = {
   },
 
   /**
-   * 計算用戶擁有的設備數
-   * @param {string} userId - 用戶 ID
-   * @returns {Promise<number>} 設備數量
+   * Count how many devices a user owns
+   * @param {string} userId - User ID
+   * @returns {Promise<number>} Device count
    */
   countUserDevices: async (userId) => {
     const { count, error } = await supabase
@@ -136,9 +136,9 @@ export const UserDeviceDB = {
   },
 
   /**
-   * 計算設備的用戶數
-   * @param {string} deviceId - 設備 ID
-   * @returns {Promise<number>} 用戶數量
+   * Count how many users own a specific device
+   * @param {string} deviceId - Device ID
+   * @returns {Promise<number>} User count
    */
   countDeviceUsers: async (deviceId) => {
     const { count, error } = await supabase

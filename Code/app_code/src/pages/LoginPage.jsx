@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { i18n } from '../i18n';
-import { UserService } from '../functions/user.functions';
+import { UserService } from '../services/user.service';
 
 export const LoginPage = ({ onLoginSuccess, lang, setLang }) => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
