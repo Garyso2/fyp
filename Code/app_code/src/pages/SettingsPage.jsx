@@ -8,6 +8,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
   const [tempLang, setTempLang] = useState(lang);
   const [tempTextSize, setTempTextSize] = useState(textSize);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [showMessage, setShowMessage] = useState(false);
 
@@ -45,12 +46,14 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
       }
 
       setSaveMessage(t.saved);
+      setSaveSuccess(true);
       setTimeout(() => {
         setShowMessage(false);
       }, 3000);
     } catch (error) {
       console.error('Save error:', error);
       setSaveMessage(t.saveFailed || '❌ 保存失敗');
+      setSaveSuccess(false);
     } finally {
       setIsSaving(false);
     }
@@ -71,7 +74,7 @@ export const SettingsPage = ({ user, lang, setLang, textSize, setTextSize }) => 
 
       {/* Alert Message */}
       {showMessage && (
-        <div className={`alert ${saveMessage.includes('✅') ? 'alert-success' : 'alert-danger'} alert-dismissible fade show`} role="alert">
+        <div className={`alert ${saveSuccess ? 'alert-success' : 'alert-danger'} alert-dismissible fade show`} role="alert">
           {saveMessage}
           <button
             type="button"

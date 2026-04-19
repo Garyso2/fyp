@@ -22,13 +22,6 @@ export const LoginPage = ({ onLoginSuccess, lang, setLang }) => {
     setSuccessMsg('');
     setIsLoading(true);
 
-    // Check admin backdoor
-    const adminUser = UserService.checkAdminBackdoor(username, password);
-    if (adminUser) {
-      onLoginSuccess(adminUser);
-      return;
-    }
-
     // Normal flow
     const result = isRegisterMode
       ? await UserService.register(username, password, confirmPassword)

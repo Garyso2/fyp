@@ -47,6 +47,8 @@ try:
 except: pass
 
 # ================= Voice Speaking Functionality =================
+import threading as _threading
+
 def speak(text, force=False):
     global last_spoken_message, last_spoken_time, current_tts_process
     if not text: return
@@ -58,12 +60,15 @@ def speak(text, force=False):
     if os.path.exists("/tmp/danger.lock"):
         try:
             with open("/tmp/danger.lock", "r") as f:
-                lock_time = float(f.read().strip())
-            # If hardware alert within 3.5 seconds, AI must be silent!
-            if current_time - lock_time < 3.5:
-                print(f"🤫 [AI Muted] Yielding to hardware, canceling speech: {text}")
-                return
-        except: pass
+                lock_content = f.read().strip()
+            if lock_content:
+                lock_time = float(lock_content)
+                # If hardware alert within 3.5 seconds, AI must be silent!
+                if current_time - lock_time < 3.5:
+                    print(f"🤫 [AI Muted] Yielding to hardware, canceling speech: {text}")
+                    return
+        except (ValueError, OSError):
+            pass  # Ignore partial reads or missing file
     # ==========================================
 
     if not force and text == last_spoken_message and (current_time - last_spoken_time < SPEECH_COOLDOWN): 
@@ -73,9 +78,13 @@ def speak(text, force=False):
     last_spoken_message = text
     last_spoken_time = current_time
 
-    # Kill any previous speech to prevent overlapping
-    subprocess.run(["pkill", "-f", "mpg123"], stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-f", "espeak"], stderr=subprocess.DEVNULL)
+    # Kill only our own previous speech process (not system-wide pkill)
+    if current_tts_process and current_tts_process.poll() is None:
+        try:
+            current_tts_process.terminate()
+            current_tts_process.wait(timeout=1)
+        except Exception:
+            pass
 
     # 🔇 Create speaking lock so mic won't pick up device's own voice
     try:
@@ -91,6 +100,20 @@ def speak(text, force=False):
     except Exception as e:
         # If can't reach internet, fallback to espeak
         current_tts_process = subprocess.Popen(["espeak", "-v", "en-us", "-s", "155", text], stderr=subprocess.DEVNULL)
+
+    # Auto-remove speaking.lock when TTS finishes (prevents permanent mute)
+    _proc = current_tts_process
+    def _auto_unlock():
+        try:
+            _proc.wait(timeout=15)
+        except Exception:
+            pass
+        try:
+            if os.path.exists("/tmp/speaking.lock"):
+                os.remove("/tmp/speaking.lock")
+        except Exception:
+            pass
+    _threading.Thread(target=_auto_unlock, daemon=True).start()
 
 def wait_for_speech_to_finish(timeout=15):
     global current_tts_process

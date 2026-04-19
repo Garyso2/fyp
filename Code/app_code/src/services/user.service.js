@@ -58,19 +58,6 @@ export const UserService = {
   },
 
   /**
-   * Dev-only admin backdoor — bypasses database for quick testing.
-   * @param {string} username
-   * @param {string} password
-   * @returns {Object|null} Hardcoded admin user object, or null if credentials don't match
-   */
-  checkAdminBackdoor: (username, password) => {
-    if (username === 'admin' && password === 'admin') {
-      return { user_id: 'admin_999', username: 'Super Admin', language: 'en' };
-    }
-    return null;
-  },
-
-  /**
    * Update the user's preferred language and persist to database
    * @param {string} userId
    * @param {string} language - Language code: 'en' | 'zh'

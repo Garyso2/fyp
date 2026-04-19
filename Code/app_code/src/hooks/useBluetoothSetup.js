@@ -1,13 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { BleClient } from '@capacitor-community/bluetooth-le';
 import { BLE_SERVICE_UUID, BLE_CHAR_UUID } from '../constants';
 
 const BT_SCAN_TIMEOUT = 15000; // 15 seconds
 const BT_OPERATION_TIMEOUT = 30000; // 30 seconds
 
+/** Encode a string to an ArrayBuffer (replaces Node.js Buffer) */
+function encodeText(str) {
+  return new TextEncoder().encode(str).buffer;
+}
+
+/** Decode a DataView/ArrayBuffer to a string (replaces Node.js Buffer) */
+function decodeData(dataView) {
+  return new TextDecoder().decode(dataView);
+}
+
 export const useBluetoothSetup = (t, deviceId, goBack) => {
   // --- State Management ---
-  const [btStep, setBtStep] = useState('check_connection'); // check_connection -> paired_view -> scanning -> select_device -> connecting -> success/failed
+  const [btStep, setBtStep] = useState('check_connection');
   const [availableDevices, setAvailableDevices] = useState([]);
   const [pairedDevices, setPairedDevices] = useState([]);
   const [selectedMAC, setSelectedMAC] = useState('');
@@ -15,12 +25,26 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
   const [isConnected, setIsConnected] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [incompleteData, setIncompleteData] = useState('');
   const [connectedDevices, setConnectedDevices] = useState([]);
+
+  // Use refs for data that callbacks need to read without stale closures
+  const incompleteDataRef = useRef('');
+  const availableDevicesRef = useRef([]);
 
   // --- Check BLE connection on component mount ---
   useEffect(() => {
     checkBleConnection();
+    // Cleanup: stop notifications on unmount
+    return () => {
+      (async () => {
+        try {
+          const connected = await BleClient.getConnectedDevices([BLE_SERVICE_UUID]);
+          if (connected && connected.length > 0) {
+            await BleClient.stopNotifications(connected[0].deviceId, BLE_SERVICE_UUID, BLE_CHAR_UUID);
+          }
+        } catch { /* ignore cleanup errors */ }
+      })();
+    };
   }, [deviceId]);
 
   const checkBleConnection = async () => {
@@ -68,7 +92,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
         deviceId,
         BLE_SERVICE_UUID,
         BLE_CHAR_UUID,
-        Buffer.from('GET_PAIRED_BT').buffer
+        encodeText('GET_PAIRED_BT')
       );
 
       // Listen for paired devices response
@@ -78,13 +102,12 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
         BLE_CHAR_UUID,
         (data) => {
           try {
-            const buffer = Buffer.from(data.value);
-            const response = buffer.toString('utf-8');
+            const response = decodeData(data.value);
 
-            let jsonData = incompleteData + response;
+            let jsonData = incompleteDataRef.current + response;
             try {
               const parsed = JSON.parse(jsonData);
-              setIncompleteData('');
+              incompleteDataRef.current = '';
 
               if (parsed.type === 'paired_devices') {
                 setPairedDevices(parsed.devices || []);
@@ -93,7 +116,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
               }
             } catch (e) {
               // Incomplete JSON, keep accumulating
-              setIncompleteData(jsonData);
+              incompleteDataRef.current = jsonData;
             }
           } catch (error) {
             console.error('❌ Failed to parse paired devices:', error);
@@ -132,13 +155,13 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
         deviceId,
         BLE_SERVICE_UUID,
         BLE_CHAR_UUID,
-        Buffer.from('SCAN_BT').buffer
+        encodeText('SCAN_BT')
       );
 
       // Set timeout for scan
       const scanTimeout = setTimeout(() => {
         console.log('⏱️  Bluetooth scan timeout reached');
-        if (availableDevices.length === 0) {
+        if (availableDevicesRef.current.length === 0) {
           setErrorMessage('No devices found during scan.');
           setBtStep('paired_view');
         }
@@ -152,26 +175,27 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
         BLE_CHAR_UUID,
         (data) => {
           try {
-            const buffer = Buffer.from(data.value);
-            const response = buffer.toString('utf-8');
+            const response = decodeData(data.value);
 
-            let jsonData = incompleteData + response;
+            let jsonData = incompleteDataRef.current + response;
             try {
               const parsed = JSON.parse(jsonData);
-              setIncompleteData('');
+              incompleteDataRef.current = '';
 
               if (parsed.type === 'available_devices') {
                 setAvailableDevices((prev) => {
                   // Avoid duplicates
                   const existing = new Set(prev.map((d) => d.mac));
                   const newDevices = parsed.devices.filter((d) => !existing.has(d.mac));
-                  return [...prev, ...newDevices];
+                  const updated = [...prev, ...newDevices];
+                  availableDevicesRef.current = updated;
+                  return updated;
                 });
                 console.log('✅ Devices found:', parsed.devices);
               }
             } catch (e) {
               // Incomplete JSON, keep accumulating
-              setIncompleteData(jsonData);
+              incompleteDataRef.current = jsonData;
             }
           } catch (error) {
             console.error('❌ Failed to parse devices:', error);
@@ -182,7 +206,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
       // Transition to device selection after scan completes
       setTimeout(() => {
         clearTimeout(scanTimeout);
-        if (availableDevices.length > 0) {
+        if (availableDevicesRef.current.length > 0) {
           setBtStep('select_device');
         } else {
           setBtStep('paired_view');
@@ -220,7 +244,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
         deviceId,
         BLE_SERVICE_UUID,
         BLE_CHAR_UUID,
-        Buffer.from(`PAIR_BT:${mac}`).buffer
+        encodeText(`PAIR_BT:${mac}`)
       );
 
       // Set timeout for pairing
@@ -241,8 +265,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
           if (responseReceived) return;
 
           try {
-            const buffer = Buffer.from(data.value);
-            const response = buffer.toString('utf-8').trim();
+            const response = decodeData(data.value).trim();
 
             if (response === 'BT_SUCCESS') {
               responseReceived = true;
@@ -294,7 +317,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
         deviceId,
         BLE_SERVICE_UUID,
         BLE_CHAR_UUID,
-        Buffer.from(`CONNECT_BT:${mac}`).buffer
+        encodeText(`CONNECT_BT:${mac}`)
       );
 
       // Set timeout for connection
@@ -315,8 +338,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
           if (responseReceived) return;
 
           try {
-            const buffer = Buffer.from(data.value);
-            const response = buffer.toString('utf-8').trim();
+            const response = decodeData(data.value).trim();
 
             if (response === 'BT_SUCCESS') {
               responseReceived = true;
@@ -364,7 +386,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
         deviceId,
         BLE_SERVICE_UUID,
         BLE_CHAR_UUID,
-        Buffer.from(`DISCONNECT_BT:${mac}`).buffer
+        encodeText(`DISCONNECT_BT:${mac}`)
       );
 
       // Small delay then refresh list
@@ -396,7 +418,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
         deviceId,
         BLE_SERVICE_UUID,
         BLE_CHAR_UUID,
-        Buffer.from(`REMOVE_BT:${mac}`).buffer
+        encodeText(`REMOVE_BT:${mac}`)
       );
 
       // Small delay then refresh list
@@ -427,7 +449,7 @@ export const useBluetoothSetup = (t, deviceId, goBack) => {
           deviceId,
           BLE_SERVICE_UUID,
           BLE_CHAR_UUID,
-          Buffer.from('CANCEL_BT_SETUP').buffer
+          encodeText('CANCEL_BT_SETUP')
         );
       }
     } catch (error) {

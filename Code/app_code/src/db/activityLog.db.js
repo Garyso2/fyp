@@ -27,7 +27,7 @@ export const ActivityLogDB = {
         }
       }
     }
-    return String(max + 1).padStart(3, '0');
+    return 'A' + String(max + 1).padStart(3, '0');
   },
 
   /**

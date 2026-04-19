@@ -4,6 +4,18 @@
 import { supabase } from '../supabaseClient';
 
 /**
+ * Hash a password using SHA-256 via Web Crypto API.
+ * Returns a hex string.
+ */
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * User Database Service
  * Responsible for all CRUD operations on user table
  */
@@ -15,11 +27,12 @@ export const UserDB = {
    * @returns {Promise<Object>} User object
    */
   findByUsernameAndPassword: async (username, password) => {
+    const hashed = await hashPassword(password);
     const { data, error } = await supabase
       .from('user')
       .select('*')
       .eq('username', username)
-      .eq('password', password)
+      .eq('password', hashed)
       .single();
 
     if (error || !data) {
@@ -75,13 +88,14 @@ export const UserDB = {
   create: async (userData) => {
     const { username, password, language = 'en' } = userData;
     const userId = await UserDB.getNextUserId();
+    const hashed = await hashPassword(password);
 
     const { data, error } = await supabase
       .from('user')
       .insert([{
         user_id: userId,
         username,
-        password,
+        password: hashed,
         language
       }])
       .select()

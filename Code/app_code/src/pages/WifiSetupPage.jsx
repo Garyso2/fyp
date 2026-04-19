@@ -6,6 +6,21 @@ import { useWifiSetup } from '../hooks/useWifiSetup';
 
 export const WifiSetupPage = ({ device, user, lang, goBack }) => {
   const t = i18n[lang] || i18n.en;
+
+  const {
+    wifiStep,
+    availableWifi,
+    selectedSSID,
+    setSelectedSSID,
+    wifiPassword,
+    setWifiPassword,
+    isLoading,
+    errorMessage,
+    connectToWifi,
+    resetSetup,
+    handleGoBack,
+    startWifiScan
+  } = useWifiSetup(t, device?.device_id, goBack);
   
   // ⚠️ Safety check: if device is missing, show error
   if (!device || !device.device_id) {
@@ -27,21 +42,6 @@ export const WifiSetupPage = ({ device, user, lang, goBack }) => {
       </div>
     );
   }
-
-  const {
-    wifiStep,
-    availableWifi,
-    selectedSSID,
-    setSelectedSSID,
-    wifiPassword,
-    setWifiPassword,
-    isLoading,
-    errorMessage,
-    connectToWifi,
-    resetSetup,
-    handleGoBack,
-    startWifiScan
-  } = useWifiSetup(t, device.device_id, goBack);
 
   return (
     <div className="pb-5 p-4" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>

@@ -39,7 +39,8 @@ class VisualGuardServer:
         self.server: Optional[BlessServer] = None
         self.is_connected_to_wifi = False
         self.loop = None
-        self.scan_thread = None
+        self.wifi_scan_thread = None
+        self.bt_scan_thread = None
         self.abort_tasks = False
 
     def notify_client(self, message: str):
@@ -124,7 +125,14 @@ class VisualGuardServer:
                 time.sleep(1)
 
     def _wifi_connection_task(self, ssid: str, password: str):
-        """Connect to WiFi network in background"""
+        """Connect to WiFi network in background.
+        
+        NOTE (security): WiFi credentials are sent over BLE in plaintext.
+        BLE pairing provides transport-level encryption, but if pairing is
+        not enforced an eavesdropper could capture the password. Consider
+        requiring BLE bonding or an application-level encryption layer for
+        production deployments.
+        """
         print(f"⏳ [Thread] Starting WiFi connection attempt to {ssid}...")
         print("🛑 [Thread] Stopping WiFi scan thread to avoid notification conflicts...")
         self.abort_tasks = True  # 🔴 CRITICAL: Stop scan thread FIRST
@@ -167,6 +175,9 @@ class VisualGuardServer:
         except Exception as e:
             print(f"❌ [WiFi] Connection exception: {e}")
             self.notify_client("WIFI_FAIL")
+        finally:
+            # Reset abort flag so future scan commands work
+            self.abort_tasks = False
 
     def handle_write(self, char, value, **kwargs):
         if value is None:
@@ -186,10 +197,10 @@ class VisualGuardServer:
         if command == "SCAN_BT":
             """Scan for available Bluetooth devices"""
             self.abort_tasks = False
-            if not self.scan_thread or not self.scan_thread.is_alive():
+            if not self.bt_scan_thread or not self.bt_scan_thread.is_alive():
                 print("🔄 Starting Bluetooth scan thread...")
-                self.scan_thread = threading.Thread(target=self._bluetooth_scan_loop, daemon=True)
-                self.scan_thread.start()
+                self.bt_scan_thread = threading.Thread(target=self._bluetooth_scan_loop, daemon=True)
+                self.bt_scan_thread.start()
             else:
                 print("ℹ️  Bluetooth scan thread already running")
         
@@ -244,10 +255,10 @@ class VisualGuardServer:
         elif command == "SCAN_WIFI":
             self.abort_tasks = False
             self.is_connected_to_wifi = False
-            if not self.scan_thread or not self.scan_thread.is_alive():
+            if not self.wifi_scan_thread or not self.wifi_scan_thread.is_alive():
                 print("🔄 Starting WiFi scan thread...")
-                self.scan_thread = threading.Thread(target=self._wifi_scan_loop, daemon=True)
-                self.scan_thread.start()
+                self.wifi_scan_thread = threading.Thread(target=self._wifi_scan_loop, daemon=True)
+                self.wifi_scan_thread.start()
             else:
                 print("ℹ️  WiFi scan thread already running")
 

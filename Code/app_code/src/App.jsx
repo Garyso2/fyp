@@ -26,13 +26,11 @@ function App() {
   const [textSize, setTextSize] = useState('medium');
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [currentPage, setCurrentPage] = useState(PAGES.DASHBOARD);
-  const [lastCheckTime, setLastCheckTime] = useState(new Date().toISOString()); // Track time of last notification check
   
   // ============ Fall Detection Notification Polling ============
+  // Set up notification listener ONCE (separate from polling interval)
   useEffect(() => {
-    if (!user?.user_id) {
-      return; // Don't poll if not logged in
-    }
+    if (!user?.user_id) return;
 
     // Initialize LocalNotifications permissions
     const initNotifications = async () => {
@@ -47,12 +45,12 @@ function App() {
     };
     initNotifications();
 
-    // Handle notification click
+    // Handle notification click — set up once and clean up on unmount
+    let listenerHandle = null;
     const setupNotificationListener = async () => {
       try {
-        LocalNotifications.addListener('localNotificationActionPerformed', (notification) => {
+        listenerHandle = await LocalNotifications.addListener('localNotificationActionPerformed', (notification) => {
           if (notification.actionId === ACTIVITY_TYPES.FALL_DETECTION || notification.notification.actionTypeId === ACTIVITY_TYPES.FALL_DETECTION) {
-            // Navigate to device logs page
             setCurrentPage(PAGES.LOGS);
             console.log('📱 Navigating to logs due to Fall Detection notification click');
           }
@@ -63,30 +61,40 @@ function App() {
     };
     setupNotificationListener();
 
+    return () => {
+      if (listenerHandle) {
+        listenerHandle.remove();
+      }
+    };
+  }, [user?.user_id]);
+
+  // Polling effect — separate from listener to avoid re-registering listeners
+  useEffect(() => {
+    if (!user?.user_id) return;
+
+    let lastCheck = new Date().toISOString();
+    let notifCounter = 0;
+
     // Poll for FALL_DETECTION logs every 10 seconds
     const pollInterval = setInterval(async () => {
       try {
-        // Get user's devices from database
         const devices = await UserDeviceDB.findDevicesByUser(user.user_id);
         if (!devices || !devices.length) return;
 
-        // Check latest logs for each device
         for (const device of devices) {
           const result = await ActivityLogService.getDeviceLogs(device.device_id, 5, 1);
           if (!result.ok || !result.logs) continue;
 
-          // Look for recent FALL_DETECTION
           for (const log of result.logs) {
             if (log.activity_type === ACTIVITY_TYPES.FALL_DETECTION) {
               const logTime = new Date(log.time);
-              // Only notify if this log is newer than last check
-              if (logTime > new Date(lastCheckTime)) {
-                // Show notification
+              if (logTime > new Date(lastCheck)) {
                 try {
+                  notifCounter += 1;
                   await LocalNotifications.schedule({
                     notifications: [
                       {
-                        id: Math.floor(Math.random() * 10000),
+                        id: notifCounter,
                         title: '⚠️ Fall Detection Alert',
                         body: `User have Fall Detection - Device: ${device.device_name || device.device_id}`,
                         smallIcon: 'res://drawable/notification_icon',
@@ -95,7 +103,7 @@ function App() {
                     ]
                   });
                   console.log('📳 Fall Detection notification sent for device:', device.device_id);
-                  setLastCheckTime(new Date().toISOString());
+                  lastCheck = new Date().toISOString();
                 } catch (notifError) {
                   console.error('❌ Failed to schedule notification:', notifError);
                 }
@@ -106,12 +114,12 @@ function App() {
       } catch (error) {
         console.error('⚠️ Fall detection poll error:', error);
       }
-    }, 10000); // Poll every 10 seconds
+    }, 10000);
 
     return () => {
       clearInterval(pollInterval);
     };
-  }, [user?.user_id, lastCheckTime]);
+  }, [user?.user_id]);
 
   // ============ Event Handlers ============
 

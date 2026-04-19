@@ -51,24 +51,45 @@ loop_count = 0  # Counter for displaying heartbeat
 ultrasonic_consec = 0   # Consecutive close-object detection count
 ultrasonic_was_clear = True  # Track whether object was absent last cycle
 STOP_FLAG = "/tmp/system_stopped.flag"  # Written by voice_listener when stopped
+_beep_process = None  # Track current beep subprocess
+_speak_process = None  # Track current espeak subprocess
 
 def beep():
     """Play a single short warning tone ("wong")"""
+    global _beep_process
+    # Terminate previous beep if still running
+    if _beep_process and _beep_process.poll() is None:
+        try:
+            _beep_process.terminate()
+            _beep_process.wait(timeout=0.5)
+        except Exception:
+            pass
     try:
-        # Use speaker-test for a pure tone beep (non-blocking)
-        subprocess.Popen(
+        # Use speaker-test for a pure tone beep — short duration via timeout
+        _beep_process = subprocess.Popen(
             ["speaker-test", "-t", "sine", "-f", "1000", "-l", "1"],
             stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
         )
+        # Kill after 0.3 seconds for a short beep
+        import threading
+        def _kill_beep():
+            time.sleep(0.3)
+            if _beep_process and _beep_process.poll() is None:
+                try:
+                    _beep_process.terminate()
+                except Exception:
+                    pass
+        threading.Thread(target=_kill_beep, daemon=True).start()
     except Exception:
         try:
             # Fallback: use beep command
-            subprocess.Popen(["beep", "-f", "1000", "-l", "300"], stderr=subprocess.DEVNULL)
+            _beep_process = subprocess.Popen(["beep", "-f", "1000", "-l", "300"], stderr=subprocess.DEVNULL)
         except Exception:
             pass  # Silent fail if neither available
 
 def speak(text):
     """Emergency voice alert (priority TTS to interrupt AI voice)"""
+    global _speak_process
     print(f"🔊 Hardware emergency alert: {text}")
     
     # 1. Create "danger lock" file to warn AI program not to speak
@@ -77,12 +98,16 @@ def speak(text):
             f.write(str(time.time()))
     except: pass
     
-    # 2. Kill any running AI voice (mpg123)
-    subprocess.run(["pkill", "-f", "mpg123"], stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-f", "espeak"], stderr=subprocess.DEVNULL)
+    # 2. Kill only our own previous espeak process (not system-wide)
+    if _speak_process and _speak_process.poll() is None:
+        try:
+            _speak_process.terminate()
+            _speak_process.wait(timeout=0.5)
+        except Exception:
+            pass
     
     # 3. Use fastest possible speech (0 second delay for emergency)
-    subprocess.Popen(["espeak", "-v", "en-us", "-s", "160", text], stderr=subprocess.DEVNULL)
+    _speak_process = subprocess.Popen(["espeak", "-v", "en-us", "-s", "160", text], stderr=subprocess.DEVNULL)
 
 def can_report_danger(sensor_type: str) -> bool:
     """

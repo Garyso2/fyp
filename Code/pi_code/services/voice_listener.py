@@ -4,6 +4,7 @@ import json as _json
 import os
 import sys
 import time
+import tempfile
 
 # Allow imports from pi_code root (config.py) when run as a subprocess
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -12,6 +13,24 @@ from config import RUN_DIR, DEVICE_ID
 
 # --- Set command file ---
 CMD_FILE = os.path.join(RUN_DIR, "voice_cmd.txt")
+
+def write_cmd(cmd_text):
+    """Atomically write a command to CMD_FILE using write-to-temp + rename."""
+    fd, tmp_path = tempfile.mkstemp(dir=RUN_DIR, prefix=".voice_cmd_", suffix=".tmp")
+    try:
+        os.write(fd, cmd_text.encode('utf-8'))
+        os.close(fd)
+        os.rename(tmp_path, CMD_FILE)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 print("🎤 [Voice Listener] Loading Vosk models...")
 model_path = os.path.expanduser("~/vosk-model-small-en-us-0.15")
@@ -180,27 +199,28 @@ while True:
             # 🌟 Chat Room Mode: All sentences become AI questions
             if is_wake_word(text):
                 chat_room_active = True
-                with open(CMD_FILE, "w") as f: f.write("CHAT_ROOM_OPEN")
+                write_cmd("CHAT_ROOM_OPEN")
                 print("💬 Chat Room OPENED - Device will greet. Say 'bye' to exit.")
                 
             elif "bye" in text and chat_room_active:
                 chat_room_active = False
-                with open(CMD_FILE, "w") as f: f.write("CHAT_ROOM_EXIT")
+                write_cmd("CHAT_ROOM_EXIT")
                 print("💬 Chat Room CLOSED")
                 
             elif chat_room_active:
                 # In chat room: every sentence becomes an AI question
-                with open(CMD_FILE, "w") as f: f.write(f"ASK_AI:{text}")
+                write_cmd(f"ASK_AI:{text}")
                 print(f"💬 [Chat Room] Question: {text}")
 
             # Photo commands (only triggering once)
             elif "photo" in text or "snap" in text or "take phone" in text:
-                with open(CMD_FILE, "w") as f: f.write("PHOTO_ONCE")
+                write_cmd("PHOTO_ONCE")
                 print(f"📷 Photo command sent (single execution)")
                 
             elif "exit" in text or "walk" in text:
-                with open(CMD_FILE, "w") as f: f.write("EXIT_PHOTO")
+                write_cmd("EXIT_PHOTO")
                 print(f"🚶 Exit walking mode")
                 
     except Exception as e:
+        print(f"❌ [Voice Listener] Main loop error: {e}")
         time.sleep(0.1)

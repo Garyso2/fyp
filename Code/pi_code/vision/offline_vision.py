@@ -28,8 +28,36 @@ while True:
                 with open(CMD_FILE, "r") as f:
                     cmd = f.read().strip()
                 
+                # Always remove command file after reading to prevent death loop
+                os.remove(CMD_FILE)
+                
+                # Handle SYSTEM_STOP
+                if cmd == "SYSTEM_STOP":
+                    system_active = False
+                    print("🛑 [Offline Vision] System paused.")
+                    subprocess.run(["espeak", "-v", "en-us", "System stopped. Say start to resume."], stderr=subprocess.DEVNULL)
+                    continue
+                
+                # Handle SYSTEM_START
+                elif cmd == "SYSTEM_START":
+                    system_active = True
+                    print("▶️  [Offline Vision] System resumed.")
+                    subprocess.run(["espeak", "-v", "en-us", "System started."], stderr=subprocess.DEVNULL)
+                    continue
+                
+                # Handle BATTERY_STATUS
+                elif cmd == "BATTERY_STATUS":
+                    level = get_battery_level()
+                    print(f"🔋 [Offline] Battery is at {level}%")
+                    subprocess.run(["espeak", "-v", "en-us", f"Battery is at {level} percent."], stderr=subprocess.DEVNULL)
+                    continue
+                
+                # Skip vision commands if system is paused
+                if not system_active:
+                    continue
+                
                 # If photo command received, take photo and analyze
-                if cmd == "PHOTO":
+                if cmd == "PHOTO" or cmd == "PHOTO_ONCE":
                     print("📷 [Offline Vision - Analysis Mode] PHOTO command received! Capturing...")
                     
                     # Capture image
@@ -63,14 +91,16 @@ while True:
                                 print(f"⚠️ [Offline Vision - Analysis Mode] TTS Error: {e}")
                         else:
                             print("⚠️ [Offline Vision - Analysis Mode] No objects detected.")
-                        
-                        # Clear command file after processing
-                        os.remove(CMD_FILE)
                     else:
                         print("❌ [Offline Vision - Analysis Mode] Failed to capture image")
                         
             except Exception as e:
                 print(f"❌ [Offline Vision] Error reading command: {e}")
+        
+        # When system is paused, sleep longer
+        if not system_active:
+            time.sleep(0.5)
+            continue
         
         # Sleep briefly to avoid busy waiting
         time.sleep(0.5)

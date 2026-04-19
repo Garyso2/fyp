@@ -11,8 +11,8 @@ DEVICE_ID = "PI_001"  # Unique device identifier
 DEVICE_NAME = "Smart Glasses V1"  # Device name
 
 # =============== Supabase Configuration ===============
-SUPABASE_URL = "https://iobnjmawpmtzsiojkauo.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvYm5qbWF3cG10enNpb2prYXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5MjMwOTksImV4cCI6MjA4NTQ5OTA5OX0.uV0rzfM2T-K3Z-0l7gPfBOKTqF6B4KCz0KnCHWOm-LI"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://iobnjmawpmtzsiojkauo.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvYm5qbWF3cG10enNpb2prYXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5MjMwOTksImV4cCI6MjA4NTQ5OTA5OX0.uV0rzfM2T-K3Z-0l7gPfBOKTqF6B4KCz0KnCHWOm-LI")
 
 # =============== Server Configuration ===============
 SERVER_IP = os.getenv("SERVER_IP", "100.125.29.38")

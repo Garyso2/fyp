@@ -1,5 +1,6 @@
 # ================== 📱 Bluetooth Manager ==================
 
+import re
 import subprocess
 import time
 from typing import List
@@ -11,6 +12,16 @@ from constants import (
     BT_SCAN_DURATION,
     MAX_SCAN_ITERATIONS
 )
+
+# Regex: valid Bluetooth MAC address (e.g. AA:BB:CC:DD:EE:FF)
+_MAC_RE = re.compile(r'^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$')
+
+def _validate_mac(mac: str) -> str:
+    """Validate and return a sanitized MAC address, or raise ValueError."""
+    mac = mac.strip()
+    if not _MAC_RE.match(mac):
+        raise ValueError(f"Invalid MAC address: {mac!r}")
+    return mac
 
 
 class BluetoothManager:
@@ -31,18 +42,17 @@ class BluetoothManager:
         print(f"🔍 Starting Bluetooth scan for {duration} seconds...")
         try:
             # Start scan in background
-            subprocess.run("bluetoothctl scan on", shell=True, timeout=1)
+            subprocess.run(["bluetoothctl", "scan", "on"], timeout=1)
         except subprocess.TimeoutExpired:
             pass  # Expected - scan runs in background
 
         time.sleep(duration)
 
         # Stop scan
-        subprocess.run("bluetoothctl scan off", shell=True)
+        subprocess.run(["bluetoothctl", "scan", "off"])
 
         # Get discovered devices
-        cmd = "bluetoothctl devices | awk '{print $2, $3}'"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        result = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True)
 
         devices = []
         for line in result.stdout.strip().split('\n'):
@@ -65,8 +75,7 @@ class BluetoothManager:
         """
         print("📋 Fetching paired devices...")
         try:
-            cmd = "bluetoothctl paired-devices | awk '{print $2, $3}'"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(["bluetoothctl", "paired-devices"], capture_output=True, text=True)
 
             devices = []
             for line in result.stdout.strip().split('\n'):
@@ -97,9 +106,12 @@ class BluetoothManager:
 
             for device in paired:
                 # Check if device is connected
-                cmd = f"bluetoothctl info {device['mac']} | grep Connected | grep yes"
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-                if result.returncode == 0:
+                try:
+                    mac = _validate_mac(device['mac'])
+                except ValueError:
+                    continue
+                result = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True)
+                if "Connected: yes" in result.stdout:
                     connected.append(device)
 
             return connected
@@ -120,13 +132,14 @@ class BluetoothManager:
         """
         print(f"🔗 Attempting to pair with {mac}...")
         try:
+            mac = _validate_mac(mac)
+
             # Trust device first (for auto-connection)
-            subprocess.run(f"bluetoothctl trust {mac}", shell=True, timeout=5)
+            subprocess.run(["bluetoothctl", "trust", mac], timeout=5)
 
             # Attempt pairing
             result = subprocess.run(
-                f"bluetoothctl pair {mac}",
-                shell=True,
+                ["bluetoothctl", "pair", mac],
                 capture_output=True,
                 text=True,
                 timeout=BT_PAIR_TIMEOUT
@@ -158,9 +171,9 @@ class BluetoothManager:
         """
         print(f"📞 Attempting to connect to {mac}...")
         try:
+            mac = _validate_mac(mac)
             result = subprocess.run(
-                f"bluetoothctl connect {mac}",
-                shell=True,
+                ["bluetoothctl", "connect", mac],
                 capture_output=True,
                 text=True,
                 timeout=BT_CONNECT_TIMEOUT
@@ -192,9 +205,9 @@ class BluetoothManager:
         """
         print(f"🔌 Disconnecting from {mac}...")
         try:
+            mac = _validate_mac(mac)
             result = subprocess.run(
-                f"bluetoothctl disconnect {mac}",
-                shell=True,
+                ["bluetoothctl", "disconnect", mac],
                 capture_output=True,
                 text=True,
                 timeout=BT_DISCONNECT_TIMEOUT
@@ -223,9 +236,9 @@ class BluetoothManager:
         """
         print(f"🗑️  Removing device {mac}...")
         try:
+            mac = _validate_mac(mac)
             result = subprocess.run(
-                f"bluetoothctl remove {mac}",
-                shell=True,
+                ["bluetoothctl", "remove", mac],
                 capture_output=True,
                 text=True,
                 timeout=BT_REMOVE_TIMEOUT
