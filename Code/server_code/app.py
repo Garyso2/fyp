@@ -19,10 +19,10 @@ from pydantic import BaseModel
 from supabase import Client, create_client
 
 
-# 線程池：手勢識別 + debug 寫檔 并行運行
+# Thread pool: run gesture recognition and debug image saving in parallel
 global_executor = ThreadPoolExecutor(max_workers=2)
 
-# ================= 🔧 初始化設定 =================
+# ================= Initialization =================
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("yolo_server")
 
@@ -45,7 +45,7 @@ PROCESSING_LOCK = asyncio.Lock()
 COLOR_HISTORY = deque(maxlen=3)
 
 # Pi Camera Module 3 NoIR Wide: focal 2.75mm, HFoV ~102°
-# 僅用於車輛距離估算，人物改用 bbox 比例
+# Used only for vehicle distance estimation; person distance is handled differently
 FOCAL_LENGTH_PIXEL = 260
 MIN_BBOX_WIDTH = 20
 
@@ -54,7 +54,7 @@ REAL_WORLD_WIDTH = {
     "motorcycle": 0.8, "stop sign": 0.75
 }
 
-# 針對遠距離物件的「低門檻」設定
+# Lower confidence thresholds for distant objects
 LOW_CONF_OBJECTS = ["traffic light", "car", "bus", "truck"]
 
 mp_hands = mp.solutions.hands
@@ -63,16 +63,16 @@ hands_detector = mp_hands.Hands(
     min_detection_confidence=0.6, min_tracking_confidence=0.5
 )
 
-GESTURE_HISTORY = deque(maxlen=3)  # 手勢平滑：最近 3 幀投票
+GESTURE_HISTORY = deque(maxlen=3)  # Gesture smoothing: vote over the latest 3 frames
 
-# NoIR 鏡頭：紅外光會降低飽和度，所以 S 門檻要降低
+# NoIR lens: infrared light lowers saturation, so reduce S thresholds
 TRAFFIC_LIGHT_COLORS = {
     "Red": [(np.array([0, 60, 80]), np.array([10, 255, 255])),
             (np.array([160, 60, 80]), np.array([180, 255, 255]))],
     "Green": [(np.array([35, 60, 80]), np.array([90, 255, 255]))]
 }
 
-# NoIR 適配：降低飽和度門檻，補償紅外光對色彩的影響
+# NoIR tuning: lower saturation thresholds to compensate for infrared color shift
 GENERAL_COLORS = {
     "Black": [(np.array([0, 0, 0]), np.array([180, 255, 50]))],
     "White": [(np.array([0, 0, 200]), np.array([180, 30, 255]))],
@@ -90,13 +90,13 @@ async def lifespan(app: FastAPI):
     ml_models["device"] = device
     if device == 'cuda:0':
         torch.backends.cudnn.benchmark = True
-        # ✅ 允許 TF32 加速矩陣運算 (4080 Super 支援)
+        # Enable TF32 for faster matrix operations (supported by RTX 4080 Super)
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         
     logger.info(f"Loading YOLO11x on {device}...")
     
-    # ✅ 嘗試載入 TensorRT 引擎，若不存在則自動導出
+    # Try loading TensorRT engine; if unavailable, fall back to the PyTorch model
     engine_path = "yolo11x.engine"
     if device == 'cuda:0' and os.path.exists(engine_path):
         logger.info("Loading TensorRT engine (fastest)...")
@@ -108,7 +108,7 @@ async def lifespan(app: FastAPI):
             logger.info("   yolo export model=yolo11x.pt format=engine imgsz=1280 half=True")
             logger.info("   Then restart the server.")
             
-    # Warm-up (3 次確保 CUDA kernel 完全編譯)
+    # Warm-up (3 runs to ensure CUDA kernels are fully compiled)
     dummy = np.zeros((640, 640, 3), dtype=np.uint8)
     for _ in range(3):
         model.predict(dummy, device=device, imgsz=1280, half=(device=='cuda:0'), verbose=False)
@@ -117,7 +117,7 @@ async def lifespan(app: FastAPI):
     ml_models["model"] = model
     logger.info(f"Model loaded and warmed up on {device}.")
     
-    # 報告 GPU 資訊
+    # Report GPU information
     if device == 'cuda:0':
         gpu_name = torch.cuda.get_device_name(0)
         gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
@@ -145,7 +145,7 @@ async def lifespan(app: FastAPI):
         logger.warning("SUPABASE_URL or SUPABASE_KEY missing; DB APIs will be unavailable.")
 
     yield
-    # 清理資源
+    # Cleanup resources
     ml_models.clear()
     supabase_client = None
     hands_detector.close()
@@ -188,10 +188,10 @@ class UserCreate(BaseModel):
     device_id: str | None = None
     Language: str = "ENG"
 
-# ================= 🧠 核心邏輯 =================
+# ================= Core Logic =================
 
 def get_gesture(img):
-    """保留 Open_Palm (切換模式) 及 Victory (再影一次)"""
+    """Keep Open_Palm (mode switch) and Victory (capture again)."""
     small_img = cv2.resize(img, (320, 240))
     img_rgb = cv2.cvtColor(small_img, cv2.COLOR_BGR2RGB)
     results = hands_detector.process(img_rgb)
@@ -199,14 +199,14 @@ def get_gesture(img):
     if results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
             lm = hand_landmarks.landmark
-            # 判斷四指是否伸直 (食指:8, 中指:12, 無名指:16, 尾指:20)
+            # Check whether four fingers are extended (index:8, middle:12, ring:16, pinky:20)
             fingers_up = [lm[i].y < lm[i-2].y for i in [8, 12, 16, 20]]
             
-            # Open_Palm: 四指全開
+            # Open_Palm: all four fingers extended
             if all(fingers_up):
                 return "Open_Palm"
                 
-            # Victory: 食指(0)和中指(1)伸直，無名指(2)和尾指(3)彎曲
+            # Victory: index(0) and middle(1) extended, ring(2) and pinky(3) bent
             if fingers_up[0] and fingers_up[1] and not fingers_up[2] and not fingers_up[3]:
                 return "Victory"
                 
@@ -214,9 +214,9 @@ def get_gesture(img):
 
 
 def get_stable_gesture(new_gesture):
-    """用最近 3 幀投票平滑手勢，減少誤判但不會太嚴"""
+    """Smooth gestures via 3-frame voting to reduce false positives."""
     GESTURE_HISTORY.append(new_gesture)
-    # 需要最近 3 幀中至少 2 幀是同一個非 None 手勢
+    # Require at least 2 of the latest 3 frames to match a non-None gesture
     non_none = [g for g in GESTURE_HISTORY if g != "None"]
     if len(non_none) >= 2:
         counts = Counter(non_none)
@@ -243,12 +243,12 @@ def get_dominant_color(crop_img, use_general=False):
     for color_name, ranges in target_ranges.items():
         mask = np.zeros(roi.shape[:2], dtype="uint8")
         for (lower, upper) in ranges:
-            # ✅ 修正: 用 bitwise_or 避免 uint8 溢位
+            # Use bitwise_or to avoid uint8 overflow
             mask = cv2.bitwise_or(mask, cv2.inRange(hsv, lower, upper))
         count = cv2.countNonZero(mask)
         ratio = count / total_pixels
         
-        # 通用物體門檻稍高以避免誤判，紅綠燈可以低一些
+        # Use a higher threshold for general objects to reduce false positives
         threshold = 0.05 if use_general else 0.04
         
         if ratio > threshold and ratio > max_ratio:
@@ -258,7 +258,7 @@ def get_dominant_color(crop_img, use_general=False):
     return detected_color
 
 def get_stable_color(new_color):
-    """用最近 3 幀的投票結果平滑顏色偵測"""
+    """Smooth color detection using vote results from the latest 3 frames."""
     COLOR_HISTORY.append(new_color)
     if len(COLOR_HISTORY) == 0: return "None"
     counts = Counter(COLOR_HISTORY)
@@ -269,18 +269,18 @@ def get_stable_color(new_color):
 
 def get_stable_obstacle(current_danger):
     """
-    用最近 5 幀的歷史平滑障礙物警告
-    - Stop (極度危險) → 立即回報
-    - Danger → 至少 2 幀確認才回報
-    - Safe → 歷史中沒有危險才確認安全
+    Smooth obstacle alerts using the latest 5-frame history.
+    - Stop (critical danger) -> report immediately
+    - Danger -> report after at least 2-frame confirmation
+    - Safe -> confirm safe only when no danger exists in history
     """
     OBSTACLE_HISTORY.append(current_danger)
 
-    # Stop 級別的危險：立即回報
+    # Stop-level danger: report immediately
     if current_danger.startswith("Stop"):
         return current_danger
 
-    # 統計歷史中的危險訊息
+    # Count danger messages in history
     danger_msgs = [msg for msg in OBSTACLE_HISTORY if msg != "Safe"]
     if len(danger_msgs) >= 2:
         return danger_msgs[-1]
@@ -288,11 +288,11 @@ def get_stable_obstacle(current_danger):
     return "Safe"
 
 
-# ================= 📡 API Endpoints =================
+# ================= API Endpoints =================
 
 @app.get("/health")
 async def health():
-    """健康檢查端點，方便 Pi 啟動時確認連線"""
+    """Health-check endpoint for startup connectivity verification on Pi."""
     return {
         "status": "ok",
         "model_loaded": "model" in ml_models,
@@ -397,11 +397,11 @@ async def detect_stream(request: Request, x_api_key: str | None = Header(default
             device = ml_models["device"]
             is_cuda = (device == 'cuda:0')
 
-            # 1. 手勢 + YOLO 並行執行
+            # 1. Run gesture recognition and YOLO in parallel
             FRAME_COUNTER += 1
             gesture_future = None
             if FRAME_COUNTER % GESTURE_SKIP_FRAMES == 0:
-                # 手勢用 CPU，與 GPU YOLO 並行
+                # Run gesture on CPU in parallel with GPU YOLO
                 gesture_future = global_executor.submit(get_gesture, img)
 
             # 2. YOLO (1280px, conf 0.20)
@@ -409,7 +409,7 @@ async def detect_stream(request: Request, x_api_key: str | None = Header(default
             results = model.predict(img, imgsz=1280, conf=0.20, device=device, half=is_cuda, verbose=False)[0]
             yolo_ms = int((time.time() - t_yolo) * 1000)
             
-            # 取手勢結果
+            # Get gesture result
             gesture = LAST_GESTURE
             if gesture_future is not None:
                 raw_gesture = gesture_future.result(timeout=1)
@@ -419,10 +419,10 @@ async def detect_stream(request: Request, x_api_key: str | None = Header(default
             
             annotated_frame = results.plot() if DEBUG_VIEW else None
 
-            # 3. Logic Processing
+            # 3. Logic processing
             current_frame_danger = "Safe"
             primary_detected_color = "None"
-            nearest_object = ""  # 畫面中最大（最近）的物體
+            nearest_object = ""  # Largest (nearest) object in the frame
             max_bbox_area = 0
             
             boxes = results.boxes
@@ -440,51 +440,51 @@ async def detect_stream(request: Request, x_api_key: str | None = Header(default
                     threshold = 0.30 if cls_name in LOW_CONF_OBJECTS else 0.50
                     if confidence < threshold: continue
 
-                    # === 🎨 顏色偵測邏輯 ===
+                    # === Color detection logic ===
                     obj_color = "None"
                     
-                    # A. 紅綠燈 暫停顏色偵測，因為 NoIR 鏡頭對紅綠燈的顏色識別不穩定，容易誤判反而干擾決策
+                    # A. Skip traffic light color detection due to unstable NoIR color accuracy
                     if cls_name == "traffic light":
-                        continue  # 🌟 直接 skip！當睇唔到紅綠燈，唔計顏色、唔回傳
+                        continue  # Skip: do not include traffic light color in output
 
-                    # B. 通用物體 (車/人)
+                    # B. General objects (vehicle/person)
                     elif cls_name in ["car", "bus", "truck", "person"]:
                         crop = img[y1:y2, x1:x2]
                         obj_color = get_dominant_color(crop, use_general=True)
                         
                         if primary_detected_color == "None" and obj_color != "None":
                             primary_detected_color = obj_color
-                            # ✅ Debug: 在電腦後台顯示偵測到的顏色
+                            # Debug: print detected color in backend console
                             if DEBUG_VIEW:
                                 print(f"🎨 Detected {obj_color} on {cls_name}")
 
-                    # Debug 畫圖
+                    # Debug overlay
                     if DEBUG_VIEW and annotated_frame is not None and obj_color != "None":
                          cv2.putText(annotated_frame, f"{obj_color}", (x1, y1-20), 
                                      cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
 
-                    # 距離判斷
+                    # Distance estimation
                     if cls_name in REAL_WORLD_WIDTH:
                         bbox_width = float(x2 - x1)
                         bbox_height = float(y2 - y1)
                         if bbox_width < MIN_BBOX_WIDTH:
                             continue
 
-                        # 追蹤畫面中最大的物體（給超聲波觸發時用）
+                        # Track the largest object in frame (for ultrasonic-triggered output)
                         bbox_area = bbox_width * bbox_height
                         if bbox_area > max_bbox_area:
                             max_bbox_area = bbox_area
-                            # 只對車輛加顏色前綴，人物不加顏色
+                            # Prefix color only for vehicles, not for person
                             if cls_name != "person" and obj_color and obj_color != "None":
                                 nearest_object = f"{obj_color} {cls_name}"
                             else:
                                 nearest_object = cls_name
 
-                        # 人物：距離由超聲波負責，鏡頭不判斷
+                        # Person: distance is handled by ultrasonic sensor, not camera
                         if cls_name == "person":
                             continue
 
-                        # 車輛/motorcycle: 用鏡頭距離公式
+                        # Vehicle/motorcycle: camera-based distance formula
                         img_w = float(img.shape[1])
                         distance = (REAL_WORLD_WIDTH[cls_name] * FOCAL_LENGTH_PIXEL) / bbox_width
                         logger.info(f"📏 {cls_name}: bbox_w={bbox_width:.0f}px, dist={distance:.2f}m")
@@ -494,7 +494,7 @@ async def detect_stream(request: Request, x_api_key: str | None = Header(default
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
                         if cls_name in ["car", "bus", "truck"]:
-                            # 🌟 新增：計算物件喺畫面嘅位置 (左中右)
+                            # Compute object position in the image (left/center/right)
                             img_w = float(img.shape[1])
                             center_x = (x1 + x2) / 2
                             if center_x < img_w * 0.33:
@@ -504,17 +504,17 @@ async def detect_stream(request: Request, x_api_key: str | None = Header(default
                             else:
                                 position = "straight ahead"
                                 
-                            # 🌟 將位置加入危險警告入面
+                            # Include position in danger alerts
                             if distance < 1.0: 
                                 current_frame_danger = f"Stop! {cls_name} {position}"
                             elif distance < 1.5: 
                                 current_frame_danger = f"Danger: {cls_name} {position}"
 
-            # 4. 平滑化
+            # 4. Smoothing
             final_color = get_stable_color(primary_detected_color)
             final_obstacle_msg = get_stable_obstacle(current_frame_danger)
 
-            # Debug 視圖 (背景線程寫檔，不阻塞回應)
+            # Debug view (save in background thread to avoid blocking response)
             if DEBUG_VIEW and annotated_frame is not None:
                 global_executor.submit(cv2.imwrite, "debug_latest.jpg", annotated_frame)
 
@@ -572,12 +572,12 @@ async def analyze_detail(request: Request, x_api_key: str | None = Header(defaul
         response = await asyncio.to_thread(_call_github)
         description = response.choices[0].message.content.strip()
         logger.info(f"GitHub Models response: {description}")
-        # 🌟 自動將 AI 描述寫入 Supabase
+        # Automatically write AI description to Supabase
         try:
             db = get_supabase()
             device_id = request.headers.get("x-device-id", "PI_001")
 
-            # 🌟 計算香港時間 (UTC + 8小時)，並設定格式為 YYYY-MM-DD HH:MM:SS
+            # Compute Hong Kong time (UTC+8) in YYYY-MM-DD HH:MM:SS format
             hk_tz = timezone(timedelta(hours=8))
             formatted_hk_time = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
             db.table("activity_logs").insert({
@@ -586,9 +586,9 @@ async def analyze_detail(request: Request, x_api_key: str | None = Header(defaul
                 "detected_content": description,
                 "time": formatted_hk_time
             }).execute()
-            logger.info("💾 成功將 AI 描述備份至 Supabase")
+            logger.info("💾 Successfully backed up AI description to Supabase")
         except Exception as db_err:
-            logger.error(f"⚠️ Supabase 寫入失敗: {db_err}")
+            logger.error(f"⚠️ Supabase write failed: {db_err}")
         return {"description": description}
     except Exception as e:
         logger.error(f"analyze_detail error: {e}", exc_info=True)
@@ -605,9 +605,9 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
     try:
         data = await request.body()
         img_b64 = base64.b64encode(data).decode("utf-8")
-        logger.info(f"🎤 [Ask AI] 用家提問: {question}")
+        logger.info(f"🎤 [Ask AI] User question: {question}")
 
-        # 🌟 新增：天氣攔截系統 (香港天文台 API - 實時溫度 + 降雨機率)
+        # Weather interception flow (HKO API: realtime temperature + rain probability)
         question_lower = question.lower()
         live_weather_data = ""
         weather_keywords = ["weather", "temperature", "rain", "hot", "cold"]
@@ -617,7 +617,7 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
                 import requests
                 weather_status = ""
                 
-                # 1. 呼叫實時天氣 API (攞最新溫度同當前降雨)
+                # 1. Call realtime weather API (latest temperature + current rainfall)
                 res_now = requests.get("https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=en", timeout=3)
                 if res_now.status_code == 200:
                     w_data = res_now.json()
@@ -627,7 +627,7 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
                     if rainfall > 0:
                         weather_status += " It is currently raining."
                 
-                # 2. 呼叫九天天氣預報 API (攞今日降雨機率)
+                # 2. Call 9-day forecast API (today's rain probability)
                 res_forecast = requests.get("https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=fnd&lang=en", timeout=3)
                 if res_forecast.status_code == 200:
                     f_data = res_forecast.json()
@@ -636,13 +636,13 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
                     weather_status += f" The probability of rain today is {psr}."
                     
                 if weather_status:
-                    # 將兩組數據結合成 System Info 偷偷塞俾 AI
+                    # Combine weather data into system context for the model
                     live_weather_data = f"[System Info: Hong Kong Weather - {weather_status}]"
-                    logger.info(f"🌤️ 成功獲取天氣: {weather_status}")
+                    logger.info(f"🌤️ Successfully fetched weather data: {weather_status}")
             except Exception as e:
-                logger.error(f"⚠️ 獲取天氣失敗: {e}")
+                logger.error(f"⚠️ Failed to fetch weather data: {e}")
 
-        # 2. 呼叫 GPT-4o-mini (修復 Azure Jailbreak 過濾問題)
+        # 2. Call GPT-4o-mini
         def _call_github_ask():
             ocr_keywords = ["read", "text", "menu"]
             is_ocr = any(kw in question_lower for kw in ocr_keywords)
@@ -651,7 +651,7 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
             hk_time = (datetime.now(timezone.utc) + timedelta(hours=8)).strftime('%Y-%m-%d %I:%M %p')
 
             if is_ocr:
-                # 📖 專屬「讀字 / 讀餐牌」模式
+                # OCR-focused mode (read text/menu)
                 system_prompt = (
                     "You are a helpful reading assistant for a visually impaired person. "
                     "Please focus on reading the text visible in the provided image clearly and logically. "
@@ -659,7 +659,7 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
                     "Reply in the same language as the text or the user's question."
                 )
             else:
-                # 💬 導盲 + 一般對話模式
+                # Navigation support + general conversation mode
                 system_prompt = (
                     "You are a friendly and helpful AI assistant for a visually impaired person. "
                     f"[System Info: Current Hong Kong Time is {hk_time}] "
@@ -670,7 +670,7 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
                     "- Keep your answers short, direct, and natural as they will be spoken aloud."
                 )
 
-            # 🌟 關鍵修改：將 Prompt 分開做 System 同 User 兩個 Role
+            # Keep prompts separated into system and user roles
             return gh_client.chat.completions.create(
                 model=GITHUB_MODEL,
                 messages=[
@@ -691,17 +691,17 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
 
         response = await asyncio.to_thread(_call_github_ask)
         answer = response.choices[0].message.content.strip()
-        logger.info(f"🤖 [Ask AI] AI 回答: {answer}")
+        logger.info(f"🤖 [Ask AI] AI Response: {answer}")
         
-        # 3. 記錄落 Supabase
+        # 3. Persist conversation to Supabase
         try:
             db = get_supabase()
             device_id = request.headers.get("x-device-id", "PI_001")
             
-            # 確保字串唔會超出預期，做個簡單清理
+            # Simple cleanup to keep log content predictable
             log_content = f"Q: {question} | A: {answer}"
 
-            # 🌟 計算香港時間 (UTC + 8小時)，並設定格式為 YYYY-MM-DD HH:MM:SS
+            # Compute Hong Kong time (UTC+8) in YYYY-MM-DD HH:MM:SS format
             hk_tz = timezone(timedelta(hours=8))
             formatted_hk_time = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
             
@@ -711,10 +711,10 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
                 "detected_content": log_content,
                 "time": formatted_hk_time
             }).execute()
-            logger.info("💾 成功將對話備份至 Supabase")
+            logger.info("💾 Successfully backed up conversation to Supabase")
         except Exception as db_err:
-            # 🚨 呢句極度重要！佢會將真正死因印喺 Terminal
-            logger.error(f"⚠️ Supabase 寫入失敗: {db_err}")
+            # Important: print root cause to terminal logs
+            logger.error(f"⚠️ Supabase write failed: {db_err}")
 
         return {"answer": answer}
         
@@ -722,11 +722,11 @@ async def ask_ai(question: str, request: Request, x_api_key: str | None = Header
         error_msg = str(e)
         logger.error(f"ask_ai error: {error_msg}")
         
-        # 🌟 攔截微軟圖片安全審查 Error
+        # Handle image safety filter errors
         if "content safety system" in error_msg or "content_policy_violation" in error_msg:
             return {"answer": "Sorry, the image was blocked by the safety filter because it is too dark. Please try in a brighter area."}
             
-        # 攔截其他 Error
+        # Handle other errors
         return {"answer": "Sorry, I encountered a network error while thinking."}
 
 if __name__ == "__main__":
