@@ -67,10 +67,11 @@ def get_battery_level():
     return 85  # Mock value when no UPS attached
 
 def main():
+    is_first_boot = not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0
     logger = setup_logger()
     logger.info("🚀 Master Control Booting Up...")
 
-    if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
+    if is_first_boot:
         logger.info("First boot detected. Starting BLE setup...")
         subprocess.run([sys.executable, f"{BASE_DIR}/connectivity/ble_server.py"])
         logger.info("WiFi setup completed.")
