@@ -212,11 +212,9 @@ while True:
                 write_cmd(f"ASK_AI:{text}")
                 print(f"💬 [Chat Room] Question: {text}")
 
-            # Photo commands (only triggering once)
-            elif "photo" in text or "snap" in text or "take phone" in text:
-                write_cmd("PHOTO_ONCE")
-                print(f"📷 Photo command sent (single execution)")
-                
+            # Photo is now triggered by five-finger gesture (see GestureListener)
+            # Voice photo command removed intentionally
+
             elif "exit" in text or "walk" in text:
                 write_cmd("EXIT_PHOTO")
                 print(f"🚶 Exit walking mode")
