@@ -40,11 +40,16 @@ current_tts_process = None
 last_danger_time = 0
 system_active = True  # False when user says "STOP SYSTEM", True after "START"
 STOP_FLAG = "/tmp/system_stopped.flag"
+AI_PROCESSING_LOCK = "/tmp/ai_processing.lock"  # Mutes mic for the entire Q&A cycle
 
-# Clear any stale speaking lock from previous run
+# Clear any stale locks from previous run
 try:
     if os.path.exists("/tmp/speaking.lock"):
         os.remove("/tmp/speaking.lock")
+except: pass
+try:
+    if os.path.exists(AI_PROCESSING_LOCK):
+        os.remove(AI_PROCESSING_LOCK)
 except: pass
 
 # ================= Voice Speaking Functionality =================
@@ -242,7 +247,13 @@ def main():
                 
                 img_bytes = capture_jpeg_memory(1920, 1080, 85)
                 if img_bytes:
+                    # 🔇 Lock mic for the entire Q&A cycle (Let me look → answer → Do you have any questions?)
+                    try:
+                        with open(AI_PROCESSING_LOCK, "w") as f: f.write(str(time.time()))
+                    except: pass
+
                     speak("Let me look.", force=True)
+                    wait_for_speech_to_finish()
                     try:
                         resp = session.post(URL_ASK, data=img_bytes, params={"question": question}, timeout=20)
                         if resp.status_code == 200:
@@ -257,6 +268,14 @@ def main():
                         print(f"❌ [Online Vision - Q&A Mode] Network error: {e}")
                         speak("Cannot reach server, please try again.", force=True)
                         wait_for_speech_to_finish()
+
+                    # Ask follow-up and only THEN release the mic
+                    speak("Do you have any questions?", force=True)
+                    wait_for_speech_to_finish()
+                    try:
+                        if os.path.exists(AI_PROCESSING_LOCK):
+                            os.remove(AI_PROCESSING_LOCK)
+                    except: pass
                 else:
                     speak("Camera error.", force=True)
                     wait_for_speech_to_finish()
@@ -327,11 +346,6 @@ def main():
                             speak("Analysis mode.", force=True); state = "FINDING_PREP"; walk_gesture_count = 0; time.sleep(1); continue
                 else: walk_gesture_count = 0 
 
-                # Handle traffic light color
-                if color == "Red" and last_color != "Red": speak("Red Light.", force=True); last_color = "Red"
-                elif color == "Green" and last_color != "Green": speak("Green Light.", force=True); last_color = "Green"
-                elif color == "None": last_color = "None"
-
                 # Handle YOLO visual obstacle avoidance
                 if obstacle != "Safe":
                     now = time.time()
@@ -379,12 +393,11 @@ def main():
                 speak("Camera error.", force=True)
                 wait_for_speech_to_finish()
             
-            speak("Say photo to take again, or say exit to resume walking.", force=True)
-            state = "WAIT_FOR_EXIT"
-            wait_mode_start_time = time.time()
-            gesture_hold_count = 0
-            last_seen_gesture = "None"
-            time.sleep(3) 
+            speak("Resuming navigation.", force=True)
+            wait_for_speech_to_finish()
+            state = "WALKING"
+            resume_walking_time = time.time()
+            gesture_listener.reset()
 
         elif state == "WAIT_FOR_EXIT":
             voice_cmd = get_voice_command()

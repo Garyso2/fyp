@@ -5,6 +5,8 @@ import os
 import sys
 import time
 import tempfile
+import struct
+import math
 
 # Allow imports from pi_code root (config.py) when run as a subprocess
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -115,14 +117,33 @@ except Exception as e:
 print("🎤 [Voice Listener] Listening for commands...")
 chat_room_active = False  # 🌟 Chat Room mode indicator
 SPEAKING_LOCK = "/tmp/speaking.lock"
+AI_PROCESSING_LOCK = "/tmp/ai_processing.lock"  # Held for the entire Q&A cycle (Let me look → Do you have any questions?)
 STOP_FLAG = "/tmp/system_stopped.flag"  # Written when system is stopped; deleted on start
 POST_SPEECH_COOLDOWN = 1.5  # Seconds to ignore mic after device stops speaking
 
-# Clear any stale lock file left over from a previous crash
+# Minimum RMS energy to accept audio — filters out voices beyond ~1–1.5 m.
+# Raise this value to require a closer/louder speaker; lower to allow more distance.
+MIN_MIC_ENERGY = 400
+
+def _audio_rms(data):
+    """Return RMS amplitude of a raw Int16 PCM frame."""
+    count = len(data) // 2
+    if count == 0:
+        return 0
+    shorts = struct.unpack_from("<%dh" % count, data)
+    rms = math.sqrt(sum(s * s for s in shorts) / count)
+    return rms
+
+# Clear any stale lock files left over from a previous crash
 try:
     if os.path.exists(SPEAKING_LOCK):
         os.remove(SPEAKING_LOCK)
         print("🔇 [Voice Listener] Cleared stale speaking.lock")
+except: pass
+try:
+    if os.path.exists(AI_PROCESSING_LOCK):
+        os.remove(AI_PROCESSING_LOCK)
+        print("🔇 [Voice Listener] Cleared stale ai_processing.lock")
 except: pass
 
 was_speaking = False      # Track previous speaking state for transition detection
@@ -132,9 +153,13 @@ while True:
     try:
         data = stream.read(4000, exception_on_overflow=False)
 
-        currently_speaking = os.path.exists(SPEAKING_LOCK)
+        # 🔇 Ignore audio that is too quiet (speaker farther than ~1–1.5 m)
+        if _audio_rms(data) < MIN_MIC_ENERGY:
+            continue
 
-        # 🔇 If device is currently speaking, flush buffer and skip recognition
+        currently_speaking = os.path.exists(SPEAKING_LOCK) or os.path.exists(AI_PROCESSING_LOCK)
+
+        # 🔇 If device is currently speaking / processing Q&A, flush buffer and skip recognition
         if currently_speaking:
             was_speaking = True
             continue  # Discard buffered audio, do NOT call AcceptWaveform
@@ -171,7 +196,9 @@ while True:
                 return any(tr in t for tr in triggers)
 
             # ── STOP SYSTEM command (works even in chat room mode) ──────────
-            if any(p in text for p in ["stop system", "stop the system", "system stop"]):
+            if any(p in text for p in ["stop system", "stop the system", "system stop",
+                                        "stop device", "stop the device", "device stop",
+                                        "salt stop", "stopped device", "top system"]):
                 chat_room_active = False
                 with open(CMD_FILE, "w") as f: f.write("SYSTEM_STOP")
                 # Write stop flag so safety_hardware also knows to pause

@@ -249,7 +249,7 @@ def get_dominant_color(crop_img, use_general=False):
         ratio = count / total_pixels
         
         # Use a higher threshold for general objects to reduce false positives
-        threshold = 0.05 if use_general else 0.04
+        threshold = 0.15 if use_general else 0.04
         
         if ratio > threshold and ratio > max_ratio:
             max_ratio = ratio
@@ -447,8 +447,8 @@ async def detect_stream(request: Request, x_api_key: str | None = Header(default
                     if cls_name == "traffic light":
                         continue  # Skip: do not include traffic light color in output
 
-                    # B. General objects (vehicle/person)
-                    elif cls_name in ["car", "bus", "truck", "person"]:
+                    # B. General objects (vehicles only — exclude person to avoid red-shirt false positives)
+                    elif cls_name in ["car", "bus", "truck"]:
                         crop = img[y1:y2, x1:x2]
                         obj_color = get_dominant_color(crop, use_general=True)
                         

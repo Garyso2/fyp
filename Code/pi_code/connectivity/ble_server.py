@@ -28,12 +28,14 @@ class VisualGuardServer:
     Handles WiFi and Bluetooth setup commands from mobile app
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, done_event: asyncio.Event = None):
         """
         Initialize BLE Server
         
         Args:
             name: Server name (displayed as BLE device name)
+            done_event: asyncio.Event that is set once WiFi setup is complete,
+                        signalling run_app() to exit and hand control back to master_control.py.
         """
         self.name = name
         self.server: Optional[BlessServer] = None
@@ -41,38 +43,44 @@ class VisualGuardServer:
         self.loop = None
         self.wifi_scan_thread = None
         self.bt_scan_thread = None
-        self.abort_tasks = False
+        self.abort_wifi = False   # abort flag for WiFi subsystem only
+        self.abort_bt = False     # abort flag for BT subsystem only
+        self._notify_lock = threading.Lock()  # serialise notify_client across threads
+        self._done_event = done_event  # set after WiFi success so run_app() can exit
 
     def notify_client(self, message: str):
         """
-        Send notification to connected mobile app
+        Send notification to connected mobile app (thread-safe).
         
         Args:
             message: Message to send (auto-encodes to UTF-8 if string)
         """
         if self.server:
-            try:
-                print(f"📡 [BLE] Sending notification: {message}")
-                # Ensure message is properly encoded
-                if isinstance(message, str):
-                    message_bytes = message.encode('utf-8')
-                else:
-                    message_bytes = message
+            with self._notify_lock:
+                try:
+                    print(f"📡 [BLE] Sending notification: {message}")
+                    # Ensure message is properly encoded
+                    if isinstance(message, str):
+                        message_bytes = message.encode('utf-8')
+                    else:
+                        message_bytes = message
 
-                # Set the characteristic value
-                char = self.server.get_characteristic(CHAR_UUID)
-                char.value = message_bytes
-                
-                # Update value to trigger notification
-                self.server.update_value(SERVICE_UUID, CHAR_UUID)
-                print(f"✅ [BLE] Notification sent successfully, length: {len(message_bytes)} bytes, content: {message}")
-                
-            except Exception as e:
-                print(f"❌ [BLE] Failed to send notification: {e}")
-                import traceback
-                traceback.print_exc()
-                self.abort_tasks = True
-                self.is_connected_to_wifi = False
+                    # Set the characteristic value
+                    char = self.server.get_characteristic(CHAR_UUID)
+                    char.value = message_bytes
+                    
+                    # Update value to trigger notification
+                    self.server.update_value(SERVICE_UUID, CHAR_UUID)
+                    print(f"✅ [BLE] Notification sent successfully, length: {len(message_bytes)} bytes, content: {message}")
+                    
+                except Exception as e:
+                    print(f"❌ [BLE] Failed to send notification: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Only abort the WiFi subsystem — a notification failure during a BT
+                    # operation should not kill WiFi state and vice versa.
+                    self.abort_wifi = True
+                    self.is_connected_to_wifi = False
         else:
             print(f"⚠️ [BLE] Server not initialized, unable to send notification: {message}")
 
@@ -80,9 +88,9 @@ class VisualGuardServer:
         """Scan for Bluetooth devices in background"""
         print("🔄 [Thread] Starting continuous Bluetooth scan...")
         scan_count = 0
-        while not self.abort_tasks and scan_count < 3:  # Scan 3 times (15 seconds total)
+        while not self.abort_bt and scan_count < 3:  # Scan 3 times (15 seconds total)
             devices = BluetoothManager.scan_devices(duration=5)
-            if devices and not self.abort_tasks:
+            if devices and not self.abort_bt:
                 self.notify_client(json.dumps({"type": "available_devices", "devices": devices}))
             scan_count += 1
 
@@ -114,14 +122,14 @@ class VisualGuardServer:
 
     def _wifi_scan_loop(self):
         print("🔄 [Thread] Starting continuous WiFi scan...")
-        while not self.is_connected_to_wifi and not self.abort_tasks:
+        while not self.is_connected_to_wifi and not self.abort_wifi:
             WiFiManager.rescan()
-            if self.abort_tasks: break 
+            if self.abort_wifi: break
             ssids = WiFiManager.get_nearby_ssids()
-            if ssids and not self.abort_tasks:
+            if ssids and not self.abort_wifi:
                 self.notify_client(json.dumps({"ssids": ssids}))
             for _ in range(10):
-                if self.abort_tasks: break
+                if self.abort_wifi: break
                 time.sleep(1)
 
     def _wifi_connection_task(self, ssid: str, password: str):
@@ -135,7 +143,7 @@ class VisualGuardServer:
         """
         print(f"⏳ [Thread] Starting WiFi connection attempt to {ssid}...")
         print("🛑 [Thread] Stopping WiFi scan thread to avoid notification conflicts...")
-        self.abort_tasks = True  # 🔴 CRITICAL: Stop scan thread FIRST
+        self.abort_wifi = True  # 🔴 CRITICAL: Stop WiFi scan thread FIRST
         
         # Wait for scan thread to stop
         time.sleep(0.5)
@@ -164,6 +172,11 @@ class VisualGuardServer:
                     self.notify_client(success_response)
                     print(f"📡 [WiFi] Sent success response ({i+1}/3): {DEVICE_ID}")
                     time.sleep(0.2)
+
+                # ✅ Signal run_app() to exit so master_control.py can proceed
+                if self._done_event and self.loop:
+                    print("🏁 [WiFi] Signalling BLE server to shut down...")
+                    self.loop.call_soon_threadsafe(self._done_event.set)
                     
             elif elapsed_time > TIMEOUT_LIMIT:
                 print(f"❌ [WiFi] Connection exceeded {TIMEOUT_LIMIT} seconds, timeout triggered")
@@ -176,8 +189,8 @@ class VisualGuardServer:
             print(f"❌ [WiFi] Connection exception: {e}")
             self.notify_client("WIFI_FAIL")
         finally:
-            # Reset abort flag so future scan commands work
-            self.abort_tasks = False
+            # Reset WiFi abort flag so future SCAN_WIFI commands work
+            self.abort_wifi = False
 
     def handle_write(self, char, value, **kwargs):
         if value is None:
@@ -196,7 +209,7 @@ class VisualGuardServer:
         # ========== BLUETOOTH COMMANDS ==========
         if command == "SCAN_BT":
             """Scan for available Bluetooth devices"""
-            self.abort_tasks = False
+            self.abort_bt = False
             if not self.bt_scan_thread or not self.bt_scan_thread.is_alive():
                 print("🔄 Starting Bluetooth scan thread...")
                 self.bt_scan_thread = threading.Thread(target=self._bluetooth_scan_loop, daemon=True)
@@ -217,7 +230,7 @@ class VisualGuardServer:
         
         elif command == "CANCEL_BT_SETUP":
             """Cancel Bluetooth setup"""
-            self.abort_tasks = True
+            self.abort_bt = True
             print("✋ Bluetooth setup cancelled")
             self.notify_client("BT_CANCELLED")
         
@@ -247,13 +260,13 @@ class VisualGuardServer:
 
         # ========== WIFI COMMANDS ==========
         elif command == "CANCEL_SETUP":
-            self.abort_tasks = True
+            self.abort_wifi = True
             self.is_connected_to_wifi = False
             print("✋ Setup cancelled")
             self.notify_client("WIFI_CANCELLED")
 
         elif command == "SCAN_WIFI":
-            self.abort_tasks = False
+            self.abort_wifi = False
             self.is_connected_to_wifi = False
             if not self.wifi_scan_thread or not self.wifi_scan_thread.is_alive():
                 print("🔄 Starting WiFi scan thread...")
@@ -298,9 +311,13 @@ class VisualGuardServer:
         print(f"🔵 {self.name} is online, waiting for connection...")
 
 async def run_app():
-    vg_server = VisualGuardServer("VisualGuard_Pi")
+    done_event = asyncio.Event()
+    vg_server = VisualGuardServer("VisualGuard_Pi", done_event)
     await vg_server.setup()
-    await asyncio.Event().wait()
+    await done_event.wait()  # Exits once WiFi setup succeeds
+    print("✅ [BLE] WiFi setup complete. Shutting down BLE server...")
+    if vg_server.server:
+        await vg_server.server.stop()
 
 if __name__ == "__main__":
     try:

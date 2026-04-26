@@ -14,11 +14,14 @@ sys.stdout.reconfigure(line_buffering=True)
 IMG_PATH = os.path.join(RUN_DIR, "capture_offline.jpg")
 AUDIO_PATH = os.path.join(RUN_DIR, "output.mp3")
 CMD_FILE = os.path.join(RUN_DIR, "voice_cmd.txt")
+OBSTACLE_TRIGGER = "/tmp/obstacle_scan.trigger"  # Written by safety_hardware on 3 consecutive ultrasonic warnings
 
 print("🔴 [Offline Vision] Loading local YOLO model...")
 model = YOLO('yolov8n.pt')
 print("✅ [Offline Vision] YOLO model loaded successfully!")
 print("🎤 [Offline Vision - Idle] Waiting for voice command...")
+
+system_active = True  # Whether vision is active (paused by SYSTEM_STOP)
 
 while True:
     try:
@@ -101,7 +104,47 @@ while True:
         if not system_active:
             time.sleep(0.5)
             continue
-        
+
+        # ── Obstacle scan triggered by ultrasonic sensor (3 consecutive warnings) ──
+        if os.path.exists(OBSTACLE_TRIGGER):
+            try:
+                os.remove(OBSTACLE_TRIGGER)
+                print("📷 [Offline Vision - Obstacle Scan] Ultrasonic trigger received! Capturing...")
+
+                result = subprocess.run(
+                    ["rpicam-still", "-o", IMG_PATH, "-t", "1000",
+                     "--width", "640", "--height", "480", "--nopreview", "--zsl"],
+                    capture_output=True,
+                    timeout=5
+                )
+
+                if result.returncode == 0 and os.path.exists(IMG_PATH):
+                    results = model(IMG_PATH, verbose=False)
+                    objects = []
+                    for r in results:
+                        for box in r.boxes:
+                            name = model.names[int(box.cls)]
+                            if name not in objects:
+                                objects.append(name)
+
+                    if objects:
+                        sentence = "Obstacle ahead. I can see " + ", ".join(objects)
+                        print(f"⚠️  [Offline Vision - Obstacle Scan] {sentence}")
+                    else:
+                        sentence = "Obstacle detected ahead, but I cannot identify it."
+                        print("⚠️  [Offline Vision - Obstacle Scan] No objects identified.")
+
+                    # Use espeak for immediate feedback (no network, no delay)
+                    subprocess.run(["espeak", "-v", "en-us", "-s", "160", sentence],
+                                   stderr=subprocess.DEVNULL)
+                else:
+                    print("❌ [Offline Vision - Obstacle Scan] Failed to capture image")
+                    subprocess.run(["espeak", "-v", "en-us", "-s", "160",
+                                    "Obstacle detected, but camera capture failed."],
+                                   stderr=subprocess.DEVNULL)
+            except Exception as e:
+                print(f"❌ [Offline Vision - Obstacle Scan] Error: {e}")
+
         # Sleep briefly to avoid busy waiting
         time.sleep(0.5)
         

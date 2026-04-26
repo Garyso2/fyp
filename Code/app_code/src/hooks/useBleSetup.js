@@ -17,24 +17,38 @@ export const useBleSetup = (t, goBack) => {
   const connIdRef = useRef(null);     // mirrors connectedDeviceId for use inside callbacks
   const serviceUuidRef = useRef(BLE_SERVICE_UUID);
   const charUuidRef = useRef(BLE_CHAR_UUID);
+  const isScanningRef = useRef(false); // ref copy of isScanning for use in cleanup (avoids stale closure)
+  const isConnectingRef = useRef(false); // guard against multiple concurrent connectToDevice calls
 
-  // --- 生命週期：離開頁面自動清理 ---
+  // Keep isScanningRef in sync with isScanning state
+  useEffect(() => { isScanningRef.current = isScanning; }, [isScanning]);
+
+  // --- 生命週期：離開頁面自動清理 (empty deps = only fires on unmount) ---
+  // Uses refs instead of state to avoid stale closure bug:
+  // Previously [isScanning, connectedDeviceId] caused cleanup to fire when the
+  // 5-second scan timeout flipped isScanning→false while connectedDeviceId was
+  // already set, sending an unintended CANCEL_SETUP to the Pi mid-connection.
   useEffect(() => {
     return () => {
-      if (isScanning) {
+      if (isScanningRef.current) {
         BleClient.stopLEScan().catch(console.error);
       }
-      if (connectedDeviceId) {
+      if (connIdRef.current) {
          const data = new TextEncoder().encode("CANCEL_SETUP");
-         BleClient.write(connectedDeviceId, BLE_SERVICE_UUID, BLE_CHAR_UUID, data)
+         BleClient.write(connIdRef.current, BLE_SERVICE_UUID, BLE_CHAR_UUID, data)
            .catch(() => {})
-           .finally(() => BleClient.disconnect(connectedDeviceId).catch(() => {}));
+           .finally(() => BleClient.disconnect(connIdRef.current).catch(() => {}));
       }
     };
-  }, [isScanning, connectedDeviceId]);
+  }, []);  // ← empty: only runs when component unmounts (user navigates away)
 
   // --- 藍牙操作功能 ---
   const startScan = async () => {
+    // Guard: ignore if already scanning
+    if (isScanningRef.current) {
+      console.log('⚠️ 已在掃描中，忽略重複呼叫');
+      return;
+    }
     try {
       setFoundDevices([]);
       setBleStep('scanning');
@@ -67,6 +81,12 @@ export const useBleSetup = (t, goBack) => {
   };
 
   const connectToDevice = async (device) => {
+    // Guard: prevent multiple concurrent connection attempts (e.g. rapid taps)
+    if (isConnectingRef.current) {
+      console.log('⚠️ 已在連接中，忽略重複呼叫');
+      return;
+    }
+    isConnectingRef.current = true;
     try {
       console.log('🔌 開始連接設備:', device.deviceId, device.name);
       
@@ -82,7 +102,11 @@ export const useBleSetup = (t, goBack) => {
       await BleClient.connect(
         device.deviceId,
         () => {
+          // Unexpected disconnect — reset all connection state so cleanup
+          // doesn't try to write/disconnect a device that's already gone.
           console.log('⚠️  設備已斷線');
+          connIdRef.current = null;
+          isConnectingRef.current = false;
           setBleStep('start');
         },
         { timeout: 30000 }
@@ -101,13 +125,16 @@ export const useBleSetup = (t, goBack) => {
       try {
         const services = await BleClient.getServices(device.deviceId);
         console.log('📋 發現的服務:', services.length);
-        for (const service of services) {
+        // Use labelled break to exit BOTH loops once the correct characteristic is found.
+        // Without this, the inner break only exits the char loop and the outer loop
+        // continues, potentially overwriting serviceUuid/charUuid with a wrong service.
+        outerLoop: for (const service of services) {
           for (const char of (service.characteristics || [])) {
             if (char.properties?.write && (char.properties?.notify || char.properties?.indicate)) {
               serviceUuid = service.uuid;
               charUuid = char.uuid;
-              console.log(`✅ 找到合適的特徵: ${charUuid}`);
-              break;
+              console.log(`✅ 找到合適的特徵: ${charUuid} (service: ${serviceUuid})`);
+              break outerLoop;
             }
           }
         }
@@ -186,6 +213,8 @@ export const useBleSetup = (t, goBack) => {
       console.error('❌ 連接失敗:', error);
       alert(`❌ 連接失敗\n\n詳情: ${error.message}\n\n提示: 檢查 Pi 端 BLE 服務是否運行`);
       setBleStep('scanning');
+    } finally {
+      isConnectingRef.current = false;
     }
   };
 

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from gpiozero import DistanceSensor
 from mpu6050 import mpu6050
-from config import DEVICE_ID, ULTRASONIC_DANGER_DISTANCE, ULTRASONIC_CHECK_INTERVAL, GYRO_DANGER_THRESHOLD, GYRO_CHECK_INTERVAL, ACTIVITY_LOG_COOLDOWN
+from config import DEVICE_ID, ULTRASONIC_WARN_MIN, ULTRASONIC_WARN_MAX, ULTRASONIC_SUPPRESS_BELOW, ULTRASONIC_CHECK_INTERVAL, GYRO_DANGER_THRESHOLD, GYRO_CHECK_INTERVAL, ACTIVITY_LOG_COOLDOWN
 
 try:
     from services.supabase_client import supabase
@@ -29,7 +29,7 @@ sys.stdout.reconfigure(line_buffering=True)
 
 # =============== Hardware Initialization ===============
 try: 
-    ultrasonic = DistanceSensor(echo=24, trigger=23, max_distance=2.0)
+    ultrasonic = DistanceSensor(echo=24, trigger=23, max_distance=2.5)
     print("✅ [Hardware] Ultrasonic sensor connected successfully!")
 except Exception as e: 
     ultrasonic = None
@@ -50,6 +50,7 @@ last_danger_time = {}  # {'ultrasonic': timestamp, 'gyroscope': timestamp}
 loop_count = 0  # Counter for displaying heartbeat
 ultrasonic_consec = 0   # Consecutive close-object detection count
 ultrasonic_was_clear = True  # Track whether object was absent last cycle
+ultrasonic_passed_below_min = False  # True once distance dropped below 1 m; suppress re-entry warnings until clear
 STOP_FLAG = "/tmp/system_stopped.flag"  # Written by voice_listener when stopped
 _beep_process = None  # Track current beep subprocess
 _speak_process = None  # Track current espeak subprocess
@@ -149,42 +150,67 @@ def report_danger(activity_type: str, content: str):
         print(f"❌ Report failed: {e}")
 
 def check_ultrasonic():
-    """Check ultrasonic sensor to detect objects too close"""
-    global ultrasonic_consec, ultrasonic_was_clear
+    """Check ultrasonic sensor — warn only in 0.5–1.5 m zone.
+    Once distance drops below 1 m, all warnings are suppressed until the object
+    fully clears (> 1.5 m).
+    """
+    global ultrasonic_consec, ultrasonic_was_clear, ultrasonic_passed_below_min
 
     if ultrasonic is None:
         return
     
     try:
-        distance = ultrasonic.distance  # Distance in meters
-        distance_cm = distance * 100  # Convert to centimeters
-        
-        if distance < ULTRASONIC_DANGER_DISTANCE:
-            # Object is close
-            if ultrasonic_was_clear:
-                # Object just appeared — reset consecutive counter
-                ultrasonic_consec = 0
-                ultrasonic_was_clear = False
+        distance = ultrasonic.distance  # Distance in metres
+        distance_cm = distance * 100
 
-            if ultrasonic_consec < 3:
-                # Play beep warning ("wong") — max 3 times in a row
-                beep()
-                ultrasonic_consec += 1
-                print(f"⚠️  [Ultrasonic] Warning beep #{ultrasonic_consec} — {distance_cm:.1f} cm")
-
-                # Only report to Supabase once when reaching 3 consecutive detections
-                if ultrasonic_consec == 3:
-                    speak(f"Warning! Object detected at {distance_cm:.1f} centimeters!")
-                    content = f"Obstacle detected at {distance_cm:.1f} cm"
-                    report_danger('OBSTACLE_WARNING', content)
-            else:
-                print(f"ℹ️  [Ultrasonic] Max warnings reached, silent — {distance_cm:.1f} cm")
-        else:
-            # Object cleared — reset state so next approach triggers beeps again
+        if distance > ULTRASONIC_WARN_MAX:
+            # ── Clear zone (> 1.5 m) — reset all state ──────────────────────
             if not ultrasonic_was_clear:
                 print("✅ [Ultrasonic] Object cleared, counter reset")
             ultrasonic_consec = 0
             ultrasonic_was_clear = True
+            ultrasonic_passed_below_min = False
+
+        elif distance < ULTRASONIC_WARN_MIN:
+            # ── Too close zone (< 0.5 m) — completely silent, lock out future warnings ──
+            ultrasonic_passed_below_min = True
+            ultrasonic_was_clear = False
+            print(f"ℹ️  [Ultrasonic] Below 0.5 m ({distance_cm:.1f} cm), no warning")
+
+        else:
+            # ── Warning zone (0.5 m – 1.5 m) ────────────────────────────────
+            # Once distance drops below 1 m, suppress all further warnings
+            if distance < ULTRASONIC_SUPPRESS_BELOW:
+                ultrasonic_passed_below_min = True
+                ultrasonic_was_clear = False
+
+            if ultrasonic_passed_below_min:
+                # Already dipped below 1 m — stay silent until object fully clears
+                print(f"ℹ️  [Ultrasonic] Below 1 m, suppressed — {distance_cm:.1f} cm")
+                return
+
+            if ultrasonic_was_clear:
+                # Object just entered warning zone — reset consecutive counter
+                ultrasonic_consec = 0
+                ultrasonic_was_clear = False
+
+            if ultrasonic_consec < 3:
+                beep()
+                ultrasonic_consec += 1
+                print(f"⚠️  [Ultrasonic] Warning beep #{ultrasonic_consec} — {distance_cm:.1f} cm")
+                if ultrasonic_consec == 3:
+                    speak(f"Warning! Object detected at {distance_cm:.1f} centimeters!")
+                    content = f"Obstacle detected at {distance_cm:.1f} cm"
+                    report_danger('OBSTACLE_WARNING', content)
+                    # Signal offline vision to scan what's ahead
+                    try:
+                        with open("/tmp/obstacle_scan.trigger", "w") as _f:
+                            _f.write(str(time.time()))
+                        print("📡 [Ultrasonic] Obstacle scan trigger sent to vision.")
+                    except Exception:
+                        pass
+            else:
+                print(f"ℹ️  [Ultrasonic] Max warnings reached, silent — {distance_cm:.1f} cm")
     
     except Exception as e:
         print(f"❌ Ultrasonic reading failed: {e}")
