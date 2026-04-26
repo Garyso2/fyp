@@ -113,7 +113,7 @@ class SupabaseClient:
     
     def update_device_status(
         self,
-        battery_level: int,
+        battery_level: Optional[int],
         is_online: bool
     ) -> bool:
         """
@@ -121,7 +121,7 @@ class SupabaseClient:
         If record doesn't exist, create it first
         
         Args:
-            battery_level: Battery percentage (0-100)
+            battery_level: Battery percentage (0-100), or None if no battery hardware
             is_online: Whether device is online
         
         Returns:
@@ -132,11 +132,13 @@ class SupabaseClient:
         
         try:
             payload = {
-                'battery_level': battery_level,
                 'is_online': is_online,
                 'last_updated': datetime.now(timezone.utc).isoformat()
             }
-            
+            # Only include battery_level if we have a real reading
+            if battery_level is not None:
+                payload['battery_level'] = battery_level
+
             # Try UPDATE first
             response = requests.patch(
                 f'{self.url}/rest/v1/device_status?device_id=eq.{self.device_id}',
@@ -146,7 +148,8 @@ class SupabaseClient:
             )
             
             if response.status_code in [200, 204]:
-                print(f"✅ [Supabase] Device status updated: {battery_level}%")
+                level_str = f"{battery_level}%" if battery_level is not None else "N/A"
+                print(f"✅ [Supabase] Device status updated: {level_str}")
                 return True
             
             # If UPDATE failed or returned no rows, try INSERT
@@ -155,10 +158,11 @@ class SupabaseClient:
                 
                 insert_payload = {
                     'device_id': self.device_id,
-                    'battery_level': battery_level,
                     'is_online': is_online,
                     'last_updated': datetime.now(timezone.utc).isoformat()
                 }
+                if battery_level is not None:
+                    insert_payload['battery_level'] = battery_level
                 
                 insert_response = requests.post(
                     f'{self.url}/rest/v1/device_status',
@@ -168,7 +172,8 @@ class SupabaseClient:
                 )
                 
                 if insert_response.status_code in [200, 201]:
-                    print(f"✅ [Supabase] Device status record created: {battery_level}%")
+                    level_str = f"{battery_level}%" if battery_level is not None else "N/A"
+                    print(f"✅ [Supabase] Device status record created: {level_str}")
                     return True
                 else:
                     print(f"❌ [Supabase] Failed to create status record: {insert_response.text}")

@@ -120,23 +120,28 @@ export const useBleSetup = (t, goBack) => {
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       // Discover services and pick the best characteristic
+      // IMPORTANT: Only search within BLE_SERVICE_UUID to avoid accidentally
+      // selecting a characteristic from another service on the device (e.g. BLE
+      // MIDI, UUID 03B80E5A-..., which also has write+notify but requires
+      // encryption and causes an "Encryption is insufficient" ATT error).
       let serviceUuid = BLE_SERVICE_UUID;
       let charUuid = BLE_CHAR_UUID;
       try {
         const services = await BleClient.getServices(device.deviceId);
         console.log('📋 發現的服務:', services.length);
-        // Use labelled break to exit BOTH loops once the correct characteristic is found.
-        // Without this, the inner break only exits the char loop and the outer loop
-        // continues, potentially overwriting serviceUuid/charUuid with a wrong service.
-        outerLoop: for (const service of services) {
-          for (const char of (service.characteristics || [])) {
+        const targetService = services.find(
+          s => s.uuid.toLowerCase() === BLE_SERVICE_UUID.toLowerCase()
+        );
+        if (targetService) {
+          for (const char of (targetService.characteristics || [])) {
             if (char.properties?.write && (char.properties?.notify || char.properties?.indicate)) {
-              serviceUuid = service.uuid;
               charUuid = char.uuid;
               console.log(`✅ 找到合適的特徵: ${charUuid} (service: ${serviceUuid})`);
-              break outerLoop;
+              break;
             }
           }
+        } else {
+          console.warn('⚠️ 目標服務未找到，使用預設 UUID');
         }
       } catch (e) {
         console.warn('⚠️ 無法獲取服務，使用預設 UUID:', e.message);

@@ -58,13 +58,14 @@ def get_battery_level():
     for path in [
         '/sys/class/power_supply/battery/capacity',
         '/sys/class/power_supply/BAT0/capacity',
+        '/sys/class/power_supply/UPS/capacity',
     ]:
         try:
             with open(path, 'r') as f:
                 return max(0, min(100, int(f.read().strip())))
         except OSError:
             continue
-    return 85  # Mock value when no UPS attached
+    return None  # No battery hardware detected — skip reporting
 
 def main():
     is_first_boot = not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0
@@ -119,8 +120,13 @@ def main():
             # Report battery level when online
             if online and HAS_SUPABASE and (current_time - last_battery_report_time >= BATTERY_REPORT_INTERVAL):
                 battery_level = get_battery_level()
-                if supabase.update_device_status(battery_level=battery_level, is_online=True):
-                    logger.info(f"Battery reported: {battery_level}%")
+                if battery_level is not None:
+                    if supabase.update_device_status(battery_level=battery_level, is_online=True):
+                        logger.info(f"Battery reported: {battery_level}%")
+                        last_battery_report_time = current_time
+                else:
+                    # No battery hardware — still update online status without battery
+                    supabase.update_device_status(battery_level=None, is_online=True)
                     last_battery_report_time = current_time
 
             # Watchdog: restart child processes if they die unexpectedly
