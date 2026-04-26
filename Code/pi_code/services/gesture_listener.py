@@ -8,6 +8,12 @@ Method: skin-colour segmentation → largest contour → convex hull → convexi
         defects to count finger gaps (4 gaps = 5 fingers).
 """
 
+import os
+# Force OpenCV to use a headless (no-display) backend — prevents a Qt/GTK
+# window from popping up when cv2 is imported on a desktop environment.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "0")
+
 import cv2
 import numpy as np
 import time

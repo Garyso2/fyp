@@ -14,7 +14,7 @@ os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 from config import SERVER_IP, SERVER_PORT, API_KEY, RUN_DIR, WALK_LOOP_DELAY, SPEECH_COOLDOWN, DANGER_COOLDOWN, DEVICE_ID
-from services.gesture_listener import GestureListener
+# from services.gesture_listener import GestureListener
 
 # ================= Configuration =================
 PORT = SERVER_PORT
@@ -195,7 +195,7 @@ def main():
     walk_gesture_count = 0  
     last_nearest_obj = ""   
     chat_mode_active = False  # Suppresses walking line when AI chat is active
-    gesture_listener = GestureListener()  # Five-finger gesture → photo trigger
+    # gesture_listener = GestureListener()  # Five-finger gesture → photo trigger
     
     print(f"🚀 [Online Vision] Started | Server: {SERVER_IP}")
     if not check_server():
@@ -311,14 +311,14 @@ def main():
             if not img_bytes: time.sleep(0.1); continue
 
             # ✋ Five-finger gesture check (local MediaPipe — replaces voice photo trigger)
-            if gesture_listener.process_frame(img_bytes):
-                print("✋ [Online Vision] Five-finger gesture → Analysis Mode")
-                speak("Analysis mode.", force=True)
-                state = "FINDING_PREP"
-                walk_gesture_count = 0
-                gesture_listener.reset()
-                time.sleep(1)
-                continue
+            # if gesture_listener.process_frame(img_bytes):
+            #     print("✋ [Online Vision] Five-finger gesture → Analysis Mode")
+            #     speak("Analysis mode.", force=True)
+            #     state = "FINDING_PREP"
+            #     walk_gesture_count = 0
+            #     gesture_listener.reset()
+            #     time.sleep(1)
+            #     continue
             
             # 3. Communicate with Server
             try:
@@ -397,7 +397,7 @@ def main():
             wait_for_speech_to_finish()
             state = "WALKING"
             resume_walking_time = time.time()
-            gesture_listener.reset()
+            # gesture_listener.reset()
 
         elif state == "WAIT_FOR_EXIT":
             voice_cmd = get_voice_command()
@@ -410,7 +410,7 @@ def main():
                 speak("Walking mode.", force=True)
                 state = "WALKING"
                 resume_walking_time = time.time()
-                gesture_listener.reset()
+                # gesture_listener.reset()
                 time.sleep(2)
                 continue
 
@@ -438,7 +438,7 @@ def main():
                             state = "WALKING"
                             resume_walking_time = time.time()
                             gesture_hold_count = 0
-                            gesture_listener.reset()
+                            # gesture_listener.reset()
                             time.sleep(2)
                         elif gesture == "Victory" and (time.time() - wait_mode_start_time > 2.0):
                             speak("One more time.", force=True)

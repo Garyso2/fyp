@@ -29,7 +29,7 @@ logger = logging.getLogger("yolo_server")
 API_KEY = os.getenv("API_KEY", "yoloProject2026")
 GITHUB_API_KEY = os.getenv("GITHUB_API_KEY", "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")
 GITHUB_MODEL = os.getenv("GITHUB_MODEL", "gpt-4o-mini")
-DEBUG_VIEW = os.getenv("DEBUG_VIEW", "true").lower() == "true"
+DEBUG_VIEW = os.getenv("DEBUG_VIEW", "false").lower() == "true"
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://iobnjmawpmtzsiojkauo.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvYm5qbWF3cG10enNpb2prYXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5MjMwOTksImV4cCI6MjA4NTQ5OTA5OX0.uV0rzfM2T-K3Z-0l7gPfBOKTqF6B4KCz0KnCHWOm-LI")
 

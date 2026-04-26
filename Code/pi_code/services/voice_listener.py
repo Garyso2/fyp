@@ -1,12 +1,50 @@
-import vosk
-import pyaudio
-import json as _json
 import os
 import sys
 import time
 import tempfile
-import struct
-import math
+import json as _json
+
+# Suppress ALSA/JACK spam before pyaudio/speech_recognition load
+import ctypes
+
+# Tell JACK not to try auto-starting or auto-connecting
+os.environ.setdefault("JACK_NO_START_SERVER", "1")
+os.environ.setdefault("JACK_NO_AUDIO_RESERVATION", "1")
+
+# Silence ALSA C-level error handler (keep reference to avoid GC → segfault)
+try:
+    _asound = ctypes.cdll.LoadLibrary("libasound.so.2")
+    _ERROR_HANDLER_FUNC = ctypes.CFUNCTYPE(
+        None, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p
+    )
+    _c_error_handler = _ERROR_HANDLER_FUNC(lambda *args: None)
+    _asound.snd_lib_error_set_handler(_c_error_handler)
+except Exception:
+    pass
+
+# Silence JACK C-level error/info handlers (keep references to avoid GC → segfault)
+try:
+    _libjack = ctypes.cdll.LoadLibrary("libjack.so.0")
+    _JACK_ERROR_FUNC = ctypes.CFUNCTYPE(None, ctypes.c_char_p)
+    _c_jack_error_handler = _JACK_ERROR_FUNC(lambda *args: None)
+    _c_jack_info_handler  = _JACK_ERROR_FUNC(lambda *args: None)
+    _libjack.jack_set_error_function(_c_jack_error_handler)
+    _libjack.jack_set_info_function(_c_jack_info_handler)
+except Exception:
+    pass
+
+# Redirect fd 2 to /dev/null for any remaining C-library stderr spam during import
+_devnull_fd = os.open(os.devnull, os.O_WRONLY)
+_saved_stderr_fd = os.dup(2)
+os.dup2(_devnull_fd, 2)
+
+import speech_recognition as sr
+import vosk
+
+# Restore stderr after noisy imports
+os.dup2(_saved_stderr_fd, 2)
+os.close(_saved_stderr_fd)
+os.close(_devnull_fd)
 
 # Allow imports from pi_code root (config.py) when run as a subprocess
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,218 +72,205 @@ def write_cmd(cmd_text):
             pass
         raise
 
-print("🎤 [Voice Listener] Loading Vosk models...")
-model_path = os.path.expanduser("~/vosk-model-small-en-us-0.15")
-if not os.path.exists(model_path):
-    print(f"❌ Vosk model not found at {model_path}!")
-    exit(1)
+# ── Vosk offline fallback ────────────────────────────────────────────────────
+vosk.SetLogLevel(-1)  # Suppress Vosk internal LOG (VoskAPI:...) messages
+_vosk_model_path = os.path.expanduser("~/vosk-model-small-en-us-0.15")
+if os.path.exists(_vosk_model_path):
+    _vosk_model = vosk.Model(_vosk_model_path)
+    print("✅ [Voice] Vosk offline fallback model loaded.")
+else:
+    _vosk_model = None
+    print("⚠️  [Voice] Vosk model not found — offline fallback unavailable.")
 
-model = vosk.Model(model_path)
-p = pyaudio.PyAudio()
-
-# Choose a valid input device whenever possible.
-def select_input_device(pa):
-    preferred_names = ["pcm2902", "texas instruments", "audio codec", "usb"]
-
-    def log_input_devices():
-        print("🎤 Available input devices:")
-        for idx in range(pa.get_device_count()):
-            info = pa.get_device_info_by_index(idx)
-            if info.get('maxInputChannels', 0) > 0:
-                print(f"  [{idx}] {info.get('name')} | channels={info.get('maxInputChannels')} | rate={info.get('defaultSampleRate')}")
-
+def _recognize_vosk_fallback(audio: sr.AudioData) -> str:
+    """Decode AudioData with Vosk when Google is unavailable (offline)."""
+    if _vosk_model is None:
+        return ""
     try:
-        info = pa.get_default_input_device_info()
-        info['index'] = int(info.get('index', 0))
-        return info
+        raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+        rec = vosk.KaldiRecognizer(_vosk_model, 16000)
+        rec.AcceptWaveform(raw)
+        return _json.loads(rec.FinalResult()).get("text", "").strip()
+    except Exception:
+        return ""
+
+# ── SpeechRecognition setup ──────────────────────────────────────────────────
+r = sr.Recognizer()
+r.energy_threshold        = 400   # Minimum mic energy to start capturing
+r.dynamic_energy_threshold = True  # Auto-adjust for ambient noise levels
+r.pause_threshold          = 0.7   # Seconds of silence = end of phrase
+r.non_speaking_duration    = 0.5   # Seconds of silence kept at start/end
+
+def _suppress_stderr():
+    """Context manager: redirect C-level stderr to /dev/null."""
+    import contextlib
+    @contextlib.contextmanager
+    def _ctx():
+        fd = os.open(os.devnull, os.O_WRONLY)
+        saved = os.dup(2)
+        os.dup2(fd, 2)
+        try:
+            yield
+        finally:
+            os.dup2(saved, 2)
+            os.close(saved)
+            os.close(fd)
+    return _ctx()
+
+with _suppress_stderr():
+    mic = sr.Microphone(sample_rate=16000)  # 16 kHz: best for both Google & Vosk
+
+print("🎤 [Voice] Calibrating for ambient noise (2 s) — please be quiet…")
+with _suppress_stderr(), mic as source:
+    r.adjust_for_ambient_noise(source, duration=2)
+print(f"🎤 [Voice] Energy threshold set to {r.energy_threshold:.0f}")
+
+# ── State ────────────────────────────────────────────────────────────────────
+chat_room_active   = False
+SPEAKING_LOCK      = "/tmp/speaking.lock"
+AI_PROCESSING_LOCK = "/tmp/ai_processing.lock"
+STOP_FLAG          = "/tmp/system_stopped.flag"
+POST_SPEECH_COOLDOWN = 0.5  # Brief echo cooldown after device stops speaking
+
+# Calibrated energy threshold — restored after AI speech to undo echo-inflated values
+_calibrated_threshold = r.energy_threshold
+
+# When device speech ends, set this to silence the mic briefly.
+_ignore_until    = 0.0
+_lock_was_active = False  # Tracks lock present→absent transition
+
+# Clear any stale lock files left from a previous crash
+for _lk in (SPEAKING_LOCK, AI_PROCESSING_LOCK):
+    try:
+        if os.path.exists(_lk):
+            os.remove(_lk)
+            print(f"🔇 [Voice] Cleared stale {os.path.basename(_lk)}")
     except Exception:
         pass
 
-    env_device = os.environ.get('VOICE_INPUT_DEVICE')
-    if env_device:
-        for idx in range(pa.get_device_count()):
-            info = pa.get_device_info_by_index(idx)
-            if info.get('maxInputChannels', 0) > 0 and env_device.lower() in info.get('name', '').lower():
-                info['index'] = idx
-                return info
+# ── Text helpers ─────────────────────────────────────────────────────────────
+def _normalize(text: str) -> str:
+    t = text.lower().strip()
+    t = t.replace("a i", "ai")
+    for m in ("high ai", "hi eye", "hey eye", "hi i", "hey i", "hi all", "hey all", "hi a", "hey a"):
+        t = t.replace(m, "hi ai")
+    for m in ("salt stop", "stopped device", "top system"):
+        t = t.replace(m, "stop system")
+    return t
 
-    candidates = []
-    for idx in range(pa.get_device_count()):
-        info = pa.get_device_info_by_index(idx)
-        if info.get('maxInputChannels', 0) > 0:
-            info['index'] = idx
-            name = info.get('name', '').lower()
-            candidates.append(info)
-            if any(pref in name for pref in preferred_names):
-                return info
+def is_wake_word(t: str) -> bool:
+    return any(tr in t for tr in [
+        "hi ai", "hey ai", "hi all", "hey all", "high ai",
+        "hi eye", "hey eye", "hi i", "hey i", "hi a", "hey a",
+    ])
 
-    if candidates:
-        # Fallback to first available input device if no preferred device is found.
-        log_input_devices()
-        print("🎤 Using first available input device because no preferred device was found.")
-        return candidates[0]
+# ── Command dispatcher ────────────────────────────────────────────────────────
+def _handle_text(raw: str):
+    global chat_room_active, _ignore_until
+    text = _normalize(raw)
+    if not text:
+        return
+    print(f"👂 Recognized: {text}")
 
-    raise RuntimeError("No input device available")
+    # STOP SYSTEM (always active, even inside chat room)
+    if any(kw in text for kw in [
+        "stop system", "stop the system", "system stop",
+        "stop device", "stop the device", "device stop",
+    ]):
+        chat_room_active = False
+        write_cmd("SYSTEM_STOP")
+        with open(STOP_FLAG, "w") as f:
+            f.write("1")
+        print("🛑 [Voice] STOP SYSTEM")
+        return
 
-try:
-    device_info = select_input_device(p)
-    mic_rate = int(device_info.get('defaultSampleRate', 16000))
-    input_device_index = int(device_info['index'])
-    print(f"🎤 Using input device: {device_info.get('name')} (index={input_device_index})")
-except Exception as e:
-    print(f"❌ Cannot find a microphone input device (Error: {e})")
-    p.terminate()
-    exit(1)
+    # START / RESUME
+    if any(kw in text for kw in [
+        "start system", "start the system", "system start", "start",
+    ]):
+        write_cmd("SYSTEM_START")
+        try:
+            if os.path.exists(STOP_FLAG):
+                os.remove(STOP_FLAG)
+        except Exception:
+            pass
+        print("▶️  [Voice] START SYSTEM")
+        return
 
-rec = vosk.KaldiRecognizer(model, mic_rate)
+    # Battery
+    if "battery" in text:
+        write_cmd("BATTERY_STATUS")
+        print("🔋 [Voice] Battery query")
+        return
 
-try:
-    stream = p.open(
-        format=pyaudio.paInt16,
-        channels=1,
-        rate=mic_rate,
-        input=True,
-        input_device_index=input_device_index,
-        frames_per_buffer=4000,
-    )
-    stream.start_stream()
-except Exception as e:
-    print(f"❌ Cannot open microphone (Error: {e})")
-    p.terminate()
-    exit(1)
+    # Wake word → open chat room
+    if is_wake_word(text):
+        chat_room_active = True
+        write_cmd("CHAT_ROOM_OPEN")
+        print("💬 Chat Room OPENED — Say 'bye' to exit.")
+        return
 
-print("🎤 [Voice Listener] Listening for commands...")
-chat_room_active = False  # 🌟 Chat Room mode indicator
-SPEAKING_LOCK = "/tmp/speaking.lock"
-AI_PROCESSING_LOCK = "/tmp/ai_processing.lock"  # Held for the entire Q&A cycle (Let me look → Do you have any questions?)
-STOP_FLAG = "/tmp/system_stopped.flag"  # Written when system is stopped; deleted on start
-POST_SPEECH_COOLDOWN = 1.5  # Seconds to ignore mic after device stops speaking
+    # Exit chat room
+    if "bye" in text and chat_room_active:
+        chat_room_active = False
+        write_cmd("CHAT_ROOM_EXIT")
+        print("💬 Chat Room CLOSED")
+        return
 
-# Minimum RMS energy to accept audio — filters out voices beyond ~1–1.5 m.
-# Raise this value to require a closer/louder speaker; lower to allow more distance.
-MIN_MIC_ENERGY = 400
+    # Chat room free-form question
+    if chat_room_active:
+        write_cmd(f"ASK_AI:{text}")
+        print(f"💬 [Chat Room] Question: {text}")
+        return
 
-def _audio_rms(data):
-    """Return RMS amplitude of a raw Int16 PCM frame."""
-    count = len(data) // 2
-    if count == 0:
-        return 0
-    shorts = struct.unpack_from("<%dh" % count, data)
-    rms = math.sqrt(sum(s * s for s in shorts) / count)
-    return rms
+    # Exit / walking mode
+    if "exit" in text or "walk" in text:
+        write_cmd("EXIT_PHOTO")
+        print("🚶 Exit walking mode")
 
-# Clear any stale lock files left over from a previous crash
-try:
-    if os.path.exists(SPEAKING_LOCK):
-        os.remove(SPEAKING_LOCK)
-        print("🔇 [Voice Listener] Cleared stale speaking.lock")
-except: pass
-try:
-    if os.path.exists(AI_PROCESSING_LOCK):
-        os.remove(AI_PROCESSING_LOCK)
-        print("🔇 [Voice Listener] Cleared stale ai_processing.lock")
-except: pass
+# ── Background listener callback ─────────────────────────────────────────────
+def _callback(recognizer: sr.Recognizer, audio: sr.AudioData):
+    global _ignore_until, _lock_was_active
 
-was_speaking = False      # Track previous speaking state for transition detection
-speech_ended_time = 0.0   # Timestamp when device last finished speaking
+    currently_locked = os.path.exists(SPEAKING_LOCK) or os.path.exists(AI_PROCESSING_LOCK)
 
-while True:
+    if currently_locked:
+        _lock_was_active = True
+        # Don't extend _ignore_until here — it will be set precisely on unlock
+        return
+
+    # Lock just released: reset threshold and set a short, fixed cooldown
+    if _lock_was_active:
+        _lock_was_active = False
+        recognizer.energy_threshold = _calibrated_threshold  # undo echo inflation
+        _ignore_until = time.time() + POST_SPEECH_COOLDOWN
+        return  # Drop this segment — likely captured during AI speech/echo
+
+    # Still within the post-unlock echo cooldown
+    if time.time() < _ignore_until:
+        return
+
+    raw_text = ""
     try:
-        data = stream.read(4000, exception_on_overflow=False)
+        # Primary: Google Web Speech API — accurate, low-latency, needs internet
+        raw_text = recognizer.recognize_google(audio, language="en-US")
+    except sr.UnknownValueError:
+        pass  # Inaudible / no speech detected
+    except sr.RequestError:
+        # No internet — fall back to local Vosk model
+        raw_text = _recognize_vosk_fallback(audio)
 
-        # 🔇 Ignore audio that is too quiet (speaker farther than ~1–1.5 m)
-        if _audio_rms(data) < MIN_MIC_ENERGY:
-            continue
+    if raw_text:
+        _handle_text(raw_text)
 
-        currently_speaking = os.path.exists(SPEAKING_LOCK) or os.path.exists(AI_PROCESSING_LOCK)
+# ── Start continuous background listener ─────────────────────────────────────
+print("🎤 [Voice Listener] Listening (Google Speech + Vosk offline fallback)…")
+with _suppress_stderr():
+    _stop_listening = r.listen_in_background(mic, _callback, phrase_time_limit=10)
 
-        # 🔇 If device is currently speaking / processing Q&A, flush buffer and skip recognition
-        if currently_speaking:
-            was_speaking = True
-            continue  # Discard buffered audio, do NOT call AcceptWaveform
-
-        # 🔇 Detect transition: device just stopped speaking → start cooldown
-        if was_speaking and not currently_speaking:
-            speech_ended_time = time.time()
-            was_speaking = False
-
-        # 🔇 Post-speech cooldown: ignore mic for a moment after device stops
-        if speech_ended_time > 0.0 and (time.time() - speech_ended_time < POST_SPEECH_COOLDOWN):
-            continue  # Still in cooldown, discard audio
-        else:
-            speech_ended_time = 0.0  # Cooldown done, reset
-
-        if rec.AcceptWaveform(data):
-            res = _json.loads(rec.Result())
-            text = res.get("text", "").lower().strip()
-            
-            if not text: continue
-            
-            # Fix common speech recognition errors
-            text = text.replace("a i", "ai").replace("hey i", "hey ai")
-            # Normalize common Vosk mishearings of "hi ai" / "hey ai"
-            text = text.replace("high ai", "hi ai").replace("hi i", "hi ai")
-            text = text.replace("hi a ", "hi ai ").replace("hi a.", "hi ai")
-            text = text.replace("hey a ", "hey ai ").replace("hey a.", "hey ai")
-            text = text.replace("hi eye", "hi ai").replace("hey eye", "hey ai")
-            print(f"👂 Recognized: {text}")
-
-            def is_wake_word(t):
-                """Catch all common Vosk mishearings of the wake word."""
-                triggers = ["hi ai", "hey ai", "hi all", "hey all", "high i", "hi i"]
-                return any(tr in t for tr in triggers)
-
-            # ── STOP SYSTEM command (works even in chat room mode) ──────────
-            if any(p in text for p in ["stop system", "stop the system", "system stop",
-                                        "stop device", "stop the device", "device stop",
-                                        "salt stop", "stopped device", "top system"]):
-                chat_room_active = False
-                with open(CMD_FILE, "w") as f: f.write("SYSTEM_STOP")
-                # Write stop flag so safety_hardware also knows to pause
-                with open(STOP_FLAG, "w") as f: f.write("1")
-                print("🛑 [Voice] STOP SYSTEM command sent")
-                continue
-
-            # ── START command to resume ──────────────────────────────────────
-            if any(p in text for p in ["start system", "start the system", "system start", "start"]):
-                with open(CMD_FILE, "w") as f: f.write("SYSTEM_START")
-                # Remove stop flag so sensors resume
-                try:
-                    if os.path.exists(STOP_FLAG):
-                        os.remove(STOP_FLAG)
-                except: pass
-                print("▶️  [Voice] START SYSTEM command sent")
-                continue
-
-            # ── Battery query ────────────────────────────────────────────────
-            if any(p in text for p in ["battery", "battery life", "battery level", "battery status"]):
-                with open(CMD_FILE, "w") as f: f.write("BATTERY_STATUS")
-                print("🔋 [Voice] Battery query sent")
-                continue
-
-            # 🌟 Chat Room Mode: All sentences become AI questions
-            if is_wake_word(text):
-                chat_room_active = True
-                write_cmd("CHAT_ROOM_OPEN")
-                print("💬 Chat Room OPENED - Device will greet. Say 'bye' to exit.")
-                
-            elif "bye" in text and chat_room_active:
-                chat_room_active = False
-                write_cmd("CHAT_ROOM_EXIT")
-                print("💬 Chat Room CLOSED")
-                
-            elif chat_room_active:
-                # In chat room: every sentence becomes an AI question
-                write_cmd(f"ASK_AI:{text}")
-                print(f"💬 [Chat Room] Question: {text}")
-
-            # Photo is now triggered by five-finger gesture (see GestureListener)
-            # Voice photo command removed intentionally
-
-            elif "exit" in text or "walk" in text:
-                write_cmd("EXIT_PHOTO")
-                print(f"🚶 Exit walking mode")
-                
-    except Exception as e:
-        print(f"❌ [Voice Listener] Main loop error: {e}")
+try:
+    while True:
         time.sleep(0.1)
+except KeyboardInterrupt:
+    _stop_listening(wait_for_stop=False)
+    print("🎤 [Voice Listener] Stopped.")

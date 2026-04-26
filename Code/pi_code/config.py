@@ -32,8 +32,9 @@ SPEECH_COOLDOWN = 4.0
 DANGER_COOLDOWN = 10.0
 
 # =============== Hardware Monitoring Settings ===============
-ULTRASONIC_WARN_MIN = 1.0   # metres — below this distance: silent (already too close)
-ULTRASONIC_WARN_MAX = 2.5   # metres — above this distance: no warning (too far)
+ULTRASONIC_WARN_MIN = 0.2   # metres — below this distance: silent (already too close)
+ULTRASONIC_WARN_MAX = 1.0   # metres — above this distance: no warning (too far)
+ULTRASONIC_SUPPRESS_BELOW = 0.5  # metres — once distance dips below this, suppress further warnings until clear
 ULTRASONIC_CHECK_INTERVAL = 0.2  # 200ms check interval
 
 GYRO_DANGER_THRESHOLD = 300  # Angular velocity threshold (degrees/sec)

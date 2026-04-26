@@ -23,12 +23,12 @@ def setup_logger():
     fh.setFormatter(formatter)
     logger.addHandler(fh)
     ch = logging.StreamHandler()
-    ch.setFormatter(formatter)
+    ch.setFormatter(formatter)                  
     logger.addHandler(ch)
     return logger
 
 def is_online():
-    try:
+    try:                                                       
         socket.create_connection((SERVER_IP, SERVER_PORT), timeout=2)
         return True
     except OSError:
@@ -78,8 +78,14 @@ def main():
         logger.info("WiFi setup completed.")
 
     logger.info("Starting hardware monitor and voice listener...")
-    hw_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/hardware/safety_hardware.py"])
-    voice_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/services/voice_listener.py"])
+    hw_proc = subprocess.Popen(
+        [sys.executable, "-u", f"{BASE_DIR}/hardware/safety_hardware.py"],
+        stdout=sys.stdout, stderr=sys.stderr
+    )
+    voice_proc = subprocess.Popen(
+        [sys.executable, "-u", f"{BASE_DIR}/services/voice_listener.py"],
+        stdout=sys.stdout, stderr=sys.stderr
+    )
 
     current_mode = None
     vision_proc = None
@@ -132,11 +138,17 @@ def main():
             # Watchdog: restart child processes if they die unexpectedly
             if hw_proc.poll() is not None:
                 logger.warning("Restarting safety_hardware...")
-                hw_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/hardware/safety_hardware.py"])
+                hw_proc = subprocess.Popen(
+                    [sys.executable, "-u", f"{BASE_DIR}/hardware/safety_hardware.py"],
+                    stdout=sys.stdout, stderr=sys.stderr
+                )
 
             if voice_proc.poll() is not None:
                 logger.warning("Restarting voice_listener...")
-                voice_proc = subprocess.Popen([sys.executable, "-u", f"{BASE_DIR}/services/voice_listener.py"])
+                voice_proc = subprocess.Popen(
+                    [sys.executable, "-u", f"{BASE_DIR}/services/voice_listener.py"],
+                    stdout=sys.stdout, stderr=sys.stderr
+                )
 
             time.sleep(5)
             

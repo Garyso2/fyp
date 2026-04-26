@@ -8,5 +8,12 @@ mpu6050-raspberrypi>=1.1.1
 requests>=2.31.0
 python-dotenv>=1.0.0  # For environment variable management (optional)
 
+# Voice recognition
+SpeechRecognition>=3.10.0  # Google Speech API (online) + Vosk fallback (offline)
+vosk>=0.3.45               # Offline fallback model
+
+# Computer vision
+opencv-python>=4.8.0  # cv2 - gesture and object detection
+
 # Other
 colorama>=0.4.6  # Colored console output (optional)
